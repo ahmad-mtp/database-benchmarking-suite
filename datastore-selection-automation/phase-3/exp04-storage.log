@@ -1,0 +1,30 @@
+alpine ref = alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+
+### NAMED VOLUME (ext4 inside the Linux VM)
+Unable to find image 'alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b' locally
+docker.io/library/alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b: Pulling from library/alpine
+df8ce8557afe: Download complete
+aa3ec251a2db: Download complete
+Digest: sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+Status: Downloaded newer image for alpine@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+  seq_write_256MB_fsync_at_end: 268435456 bytes (256.0MB) copied, 0.107610 seconds, 2.3GB/s
+  fsync_per_1MB_x64 (WAL-like):  dd: invalid argument 'dsync' to 'oflag'
+  fsync_per_8KB_x2000 (commit-like): dd: invalid argument 'dsync' to 'oflag'
+  metadata: 2000 file creates:   0 ms
+
+### BIND MOUNT (VirtioFS bridge to macOS APFS)
+  seq_write_256MB_fsync_at_end: 268435456 bytes (256.0MB) copied, 0.188662 seconds, 1.3GB/s
+  fsync_per_1MB_x64 (WAL-like):  dd: invalid argument 'dsync' to 'oflag'
+  fsync_per_8KB_x2000 (commit-like): dd: invalid argument 'dsync' to 'oflag'
+  metadata: 2000 file creates:   0 ms
+
+### TMPFS (RAM, upper bound / noise floor)
+  seq_write_256MB_fsync_at_end: 268435456 bytes (256.0MB) copied, 0.029797 seconds, 8.4GB/s
+  fsync_per_1MB_x64 (WAL-like):  dd: invalid argument 'dsync' to 'oflag'
+  fsync_per_8KB_x2000 (commit-like): dd: invalid argument 'dsync' to 'oflag'
+  metadata: 2000 file creates:   0 ms
+
+### CONTAINER WRITABLE LAYER (overlayfs)
+sh: can't open 'sh': No such file or directory
+
+=== DONE ===

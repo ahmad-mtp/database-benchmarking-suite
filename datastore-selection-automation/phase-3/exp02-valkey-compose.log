@@ -1,0 +1,124 @@
+=== compose config (does it validate + what does it resolve to?) ===
+name: dsa-exp02
+services:
+  valkey:
+    cpuset: 0-1
+    command:
+      - valkey-server
+      - --save
+      - ""
+      - --appendonly
+      - 'no'
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+      - --io-threads
+      - "2"
+    deploy:
+      resources:
+        limits:
+          cpus: 2
+          memory: "2147483648"
+          pids: 512
+        reservations:
+          cpus: 1
+          memory: "1073741824"
+    healthcheck:
+      test:
+        - CMD
+        - valkey-cli
+        - ping
+      timeout: 3s
+      interval: 1s
+      retries: 60
+      start_period: 1s
+    image: valkey/valkey@sha256:a174b894902bd3367e330d47cc2054367dc4917701776aaf336f41d83b65ec7a
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 6379
+
+=== [A] compose up --wait  (health gate delegated to compose) ===
+ Container dsa-exp02-valkey-1 Created 
+ Container dsa-exp02-valkey-1 Starting 
+ Container dsa-exp02-valkey-1 Started 
+ Container dsa-exp02-valkey-1 Waiting 
+ Container dsa-exp02-valkey-1 Healthy 
+compose_up_wait_to_healthy=13.597s
+
+=== [B] did deploy.resources.limits + cpuset actually reach the cgroup? ===
+HostConfig.NanoCpus=2000000000
+HostConfig.Memory=2147483648
+HostConfig.CpusetCpus=0-1
+HostConfig.PidsLimit=512
+cpu.max=200000 100000
+cpuset.cpus.effective=0-1
+memory.max=2147483648
+nproc_visible=2
+
+=== [C] engine version + config read back from the RUNNING server ===
+redis_version:7.2.4
+valkey_version:9.1.2
+os:Linux 7.0.12-linuxkit aarch64
+arch_bits:64
+multiplexing_api:epoll
+process_id:1
+io_threads_active:0
+maxmemory
+536870912
+io-threads
+2
+appendonly
+no
+save
+
+
+=== [D] LOAD + measured runs with valkey-benchmark ===
+--- warmup (discarded)
+ SET: rps=0.0 (overall: 155000.0) avg_msec=0.040 (overall: 0.040) 155 requests                                                                              SET: 285714.28 requests per second, p50=0.031 msec
+ GET: 298507.47 requests per second, p50=0.031 msec
+
+--- repeat 1 (csv output, p50/p95/p99 included)
+"test","rps","avg_latency_ms","min_latency_ms","p50_latency_ms","p95_latency_ms","p99_latency_ms","max_latency_ms"
+"SET","292397.66","0.032","0.008","0.031","0.047","0.063","0.559"
+"GET","181818.17","0.058","0.008","0.063","0.079","0.087","3.175"
+--- repeat 2 (csv output, p50/p95/p99 included)
+"test","rps","avg_latency_ms","min_latency_ms","p50_latency_ms","p95_latency_ms","p99_latency_ms","max_latency_ms"
+"SET","160771.70","0.065","0.024","0.071","0.079","0.087","3.375"
+"GET","145348.83","0.082","0.008","0.071","0.087","0.127","8.079"
+--- repeat 3 (csv output, p50/p95/p99 included)
+"test","rps","avg_latency_ms","min_latency_ms","p50_latency_ms","p95_latency_ms","p99_latency_ms","max_latency_ms"
+"SET","156250.00","0.073","0.008","0.071","0.087","0.103","2.863"
+"GET","155279.50","0.071","0.008","0.071","0.087","0.103","2.655"
+
+=== [E] latency-percentile detail available? ===
+# Latencystats
+latency_percentiles_usec_ping:p50=2.007,p99=3.007,p99.9=3.007
+latency_percentiles_usec_config|get:p50=3.007,p99=4.015,p99.9=4.015
+latency_percentiles_usec_info:p50=9.023,p99=9.023,p99.9=9.023
+latency_percentiles_usec_set:p50=0.001,p99=1.003,p99.9=1.003
+latency_percentiles_usec_get:p50=0.001,p99=1.003,p99.9=1.003
+# Commandstats
+cmdstat_ping:calls=3,usec=5,usec_per_call=1.67,rejected_calls=0,failed_calls=0
+cmdstat_config|get:calls=14,usec=37,usec_per_call=2.64,rejected_calls=0,failed_calls=0
+cmdstat_info:calls=2,usec=44,usec_per_call=22.00,rejected_calls=0,failed_calls=0
+cmdstat_set:calls=170000,usec=29772,usec_per_call=0.18,rejected_calls=0,failed_calls=0
+peak.allocated
+1802632
+total.allocated
+1526696
+startup.allocated
+1389592
+
+=== [F] stats ===
+{"BlockIO":"0B / 0B","CPUPerc":"100.53%","Container":"eac239215c9d682a87bf8ba09c049a57baa1bb89e69e01b289156ed6bf5ffbe5","ID":"eac239215c9d","MemPerc":"0.56%","MemUsage":"11.39MiB / 2GiB","Name":"dsa-exp02-valkey-1","NetIO":"1.75kB / 126B","PIDs":"9"}
+
+=== [G] TEARDOWN via compose down -v (run twice for idempotency) ===
+ Container dsa-exp02-valkey-1 Removed 
+ Network dsa-exp02_default Removing 
+ Network dsa-exp02_default Removed 
+second down exit=0
+teardown=0.341s
+=== DONE ===

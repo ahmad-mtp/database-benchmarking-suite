@@ -1,0 +1,19 @@
+=== VM kernel ===
+7.0.12-linuxkit
+
+=== rotational flag claim (NVMe reported as spinning disk?) ===
+/sys/block/vda rotational=1 scheduler=none [mq-deadline] kyber 
+/sys/block/vdb rotational=1 scheduler=none [mq-deadline] kyber 
+
+=== MongoDB 8 on this kernel: does it actually refuse to start? ===
+mongo:8 index digest=sha256:5211c51171f57ae60842b11664bb244628971b3d35325762a97888337b9bb0db
+state: exited exit=1
+--- logs ---
+{"t":{"$date":"2026-09-01T09:39:16.413+00:00"},"s":"F",  "c":"CONTROL",  "id":12257600,"ctx":"main","msg":"MongoDB cannot start: Linux kernel versions 6.19 and newer has a known incompatibility with this version of MongoDB. See https://jira.mongodb.org/browse/SERVER-121912 for more information."}
+
+=== control: does MongoDB 7 start on the same kernel? ===
+mongo:7 index digest=sha256:b6421fd6d1c5ded6377b397d8983e2f82e2100dc5123332dcfda2065a472be5b
+mongo7 health=healthy  state=running
+version=7.0.40
+wiredTiger.cache.max_bytes=536870912
+host.mem={"high":0,"low":7934,"unsigned":false}MB  numCores=10

@@ -1,0 +1,50 @@
+
+################ A: NAMED VOLUME (ext4 in the Linux VM) ################
+health=healthy
+done in 1.02 s (drop tables 0.00 s, create tables 0.00 s, client-side generate 0.67 s, vacuum 0.08 s, primary keys 0.26 s).
+  -- warmup 8s (discarded)
+  -- 3 x 15s WRITE-HEAVY (default tpcb-like, commit-bound => fsync-sensitive)
+latency average = 0.582 ms tps = 13736.745180 (without initial connection time) [rep 1]
+latency average = 0.622 ms tps = 12854.247322 (without initial connection time) [rep 2]
+latency average = 0.628 ms tps = 12740.583229 (without initial connection time) [rep 3]
+  -- 3 x 10s READ-ONLY (-S, page-cache bound => storage-insensitive control)
+tps = 102426.263983 (without initial connection time) [rep 1]
+tps = 103955.778390 (without initial connection time) [rep 2]
+tps = 101221.789938 (without initial connection time) [rep 3]
+/dev/vda1               452.1G      4.8G    424.3G   1% /etc/resolv.conf
+fstype=ext2/ext3
+BlockIO=0B / 6.44GB Mem=326.4MiB / 2GiB
+
+################ B: BIND MOUNT (VirtioFS -> macOS APFS) ################
+health=healthy
+done in 2.98 s (drop tables 0.00 s, create tables 0.01 s, client-side generate 2.05 s, vacuum 0.14 s, primary keys 0.78 s).
+  -- warmup 8s (discarded)
+  -- 3 x 15s WRITE-HEAVY (default tpcb-like, commit-bound => fsync-sensitive)
+latency average = 0.689 ms tps = 11605.811493 (without initial connection time) [rep 1]
+latency average = 0.688 ms tps = 11620.518590 (without initial connection time) [rep 2]
+latency average = 0.687 ms tps = 11637.927787 (without initial connection time) [rep 3]
+  -- 3 x 10s READ-ONLY (-S, page-cache bound => storage-insensitive control)
+tps = 56783.517265 (without initial connection time) [rep 1]
+tps = 83751.650938 (without initial connection time) [rep 2]
+tps = 76655.223433 (without initial connection time) [rep 3]
+virtiofs0               460.4G     87.6G    372.8G  19% /var/lib/postgresql/data
+fstype=UNKNOWN
+BlockIO=0B / 8.19kB Mem=291.6MiB / 2GiB
+
+################ C: TMPFS (RAM — no durable storage at all) ################
+health=healthy
+done in 0.92 s (drop tables 0.00 s, create tables 0.00 s, client-side generate 0.64 s, vacuum 0.05 s, primary keys 0.22 s).
+  -- warmup 8s (discarded)
+  -- 3 x 15s WRITE-HEAVY (default tpcb-like, commit-bound => fsync-sensitive)
+latency average = 0.931 ms tps = 8597.287173 (without initial connection time) [rep 1]
+latency average = 0.647 ms tps = 12359.000968 (without initial connection time) [rep 2]
+latency average = 0.568 ms tps = 14095.466477 (without initial connection time) [rep 3]
+  -- 3 x 10s READ-ONLY (-S, page-cache bound => storage-insensitive control)
+tps = 87226.132079 (without initial connection time) [rep 1]
+tps = 87853.869152 (without initial connection time) [rep 2]
+tps = 92525.491430 (without initial connection time) [rep 3]
+tmpfs                     2.0G    866.6M      1.2G  42% /var/lib/postgresql/data
+fstype=tmpfs
+BlockIO=0B / 8.19kB Mem=1.134GiB / 2GiB
+
+=== DONE ===

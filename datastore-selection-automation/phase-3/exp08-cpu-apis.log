@@ -1,0 +1,11 @@
+--- the five ways a program can ask "how many CPUs do I have?" under --cpuset-cpus=0-1 ---
+1. nproc (sched_getaffinity)          : 2
+2. /proc/cpuinfo processor lines      : 10
+3. getconf _NPROCESSORS_ONLN          : 2
+4. /sys/devices/system/cpu/online     : 0-9
+5. cgroup cpu.max quota               : 200000 100000
+   cgroup cpuset.cpus.effective       : 0-1
+
+--- and "how much memory?" under --memory=2g ---
+a. /proc/meminfo MemTotal             : 8124516 kB
+b. cgroup memory.max                  : 2147483648 bytes

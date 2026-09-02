@@ -1,0 +1,66 @@
+=== resolve index digest for clickhouse/clickhouse-server:25.8-alpine ===
+Name:      docker.io/clickhouse/clickhouse-server:25.8-alpine
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:87e0a5b72f5465b18eacca7c76850e7ff551c9795c50e451f5646299e5e24146
+           
+index_digest=sha256:87e0a5b72f5465b18eacca7c76850e7ff551c9795c50e451f5646299e5e24146
+pull_elapsed=23.7s
+size_bytes=186764054 arch=arm64
+
+############ CASE: A: --cpus=2 quota ONLY (no affinity) ############
+docker run flags: --cpus=2.0 --memory=3g --memory-swap=3g
+health=healthy start_to_healthy=5.560s
+  nproc=10  cpu.max=200000 100000  cpuset.eff=0-9  memory.max=3221225472
+  --- what ClickHouse thinks it has:
+max_final_threads	\'auto(2)\'
+max_insert_threads	0
+max_threads	\'auto(2)\'
+server_version	25.8.33.6
+cpu_cores_detected	2
+OSMemoryTotal_GiB	7.75
+CGroupMaxCPU	2
+CGroupMemoryTotal	3221225472
+OSMemoryTotal	8319504384
+  --- trivial load: 20M-row aggregation, timed 3x
+0.007 s (repeat 1)
+0.006 s (repeat 2)
+0.006 s (repeat 3)
+
+############ CASE: B: --cpuset-cpus=0-1 affinity ONLY ############
+docker run flags: --cpuset-cpus=0-1 --memory=3g --memory-swap=3g
+health=healthy start_to_healthy=5.376s
+  nproc=2  cpu.max=max 100000  cpuset.eff=0-1  memory.max=3221225472
+  --- what ClickHouse thinks it has:
+max_final_threads	\'auto(2)\'
+max_insert_threads	0
+max_threads	\'auto(2)\'
+server_version	25.8.33.6
+cpu_cores_detected	2
+OSMemoryTotal_GiB	7.75
+CGroupMemoryTotal	3221225472
+OSMemoryTotal	8319504384
+  --- trivial load: 20M-row aggregation, timed 3x
+0.007 s (repeat 1)
+0.007 s (repeat 2)
+0.008 s (repeat 3)
+
+############ CASE: C: BOTH quota + affinity ############
+docker run flags: --cpus=2.0 --cpuset-cpus=0-1 --memory=3g --memory-swap=3g
+health=healthy start_to_healthy=5.381s
+  nproc=2  cpu.max=200000 100000  cpuset.eff=0-1  memory.max=3221225472
+  --- what ClickHouse thinks it has:
+max_final_threads	\'auto(2)\'
+max_insert_threads	0
+max_threads	\'auto(2)\'
+server_version	25.8.33.6
+cpu_cores_detected	2
+OSMemoryTotal_GiB	7.75
+CGroupMaxCPU	2
+CGroupMemoryTotal	3221225472
+OSMemoryTotal	8319504384
+  --- trivial load: 20M-row aggregation, timed 3x
+0.008 s (repeat 1)
+0.006 s (repeat 2)
+0.006 s (repeat 3)
+
+=== DONE ===

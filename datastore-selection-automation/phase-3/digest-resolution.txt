@@ -1,0 +1,67 @@
+### pre-existing containers (noisy-neighbour check)
+CONTAINER ID   IMAGE                        NAMES           STATUS
+7617bb08f6ae   temporalio/temporal:latest   orch-temporal   Up 3 days (healthy)
+
+### resolving multi-arch digests WITHOUT pulling (imagetools inspect)
+--- postgres:18.6-alpine
+Name:      docker.io/library/postgres:18.6-alpine
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+           
+Manifests: 
+  Name:        docker.io/library/postgres:18.6-alpine@sha256:63bdc97d67b5133bf0e5ebd500bec6d046fa851dc81340d838f0347e616107e8
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    linux/amd64
+  Annotations: 
+    org.opencontainers.image.base.digest:     sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+    org.opencontainers.image.base.name:       alpine:3.24
+    org.opencontainers.image.created:         2026-08-13T19:14:36Z
+    org.opencontainers.image.revision:        e00e1bd34ec5c8a8e7ad89b273b3d42efaf6d5bc
+    org.opencontainers.image.source:          https://github.com/docker-library/postgres.git#e00e1bd34ec5c8a8e7ad89b273b3d42efaf6d5bc:18/alpine3.24
+    org.opencontainers.image.url:             https://hub.docker.com/_/postgres
+    org.opencontainers.image.version:         18.6-alpine3.24
+    com.docker.official-images.bashbrew.arch: amd64
+               
+  Name:        docker.io/library/postgres:18.6-alpine@sha256:3b8a305739f0ef09cfea4b5a43c040f80c2c691f98958eceb0596218162d6c82
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    unknown/unknown
+  Annotations: 
+    com.docker.official-images.bashbrew.arch: amd64
+    vnd.docker.reference.digest:              sha256:63bdc97d67b5133bf0e5ebd500bec6d046fa851dc81340d838f0347e616107e8
+    vnd.docker.reference.type:                attestation-manifest
+               
+  Name:        docker.io/library/postgres:18.6-alpine@sha256:6a8555976b09435009d8f09730b55ac6216aab872d86775caf05f2cb64d7e143
+  MediaType:   application/vnd.oci.image.manifest.v1+json
+  Platform:    linux/arm/v6
+  Annotations: 
+    org.opencontainers.image.revision:        e00e1bd34ec5c8a8e7ad89b273b3d42efaf6d5bc
+    org.opencontainers.image.source:          https://github.com/docker-library/postgres.git#e00e1bd34ec5c8a8e7ad89b273b3d42efaf6d5bc:18/alpine3.24
+    org.opencontainers.image.url:             https://hub.docker.com/_/postgres
+    org.opencontainers.image.version:         18.6-alpine3.24
+    com.docker.official-images.bashbrew.arch: arm32v6
+    org.opencontainers.image.base.digest:     sha256:bc301c70d7e7b929e5d3251d08ecc2e2894c22580958f79298052ed73ada4be0
+    org.opencontainers.image.base.name:       alpine:3.24
+    org.opencontainers.image.created:         2026-08-13T19:21:08Z
+               
+  Name:        docker.io/library/postgres:18.6-alpine@sha256:d67c55f7cb9c9ee6a3b3d9aee1c28460be18d2d52debdd2a283a70e836070590
+--- valkey/valkey:9-alpine
+Name:      docker.io/valkey/valkey:9-alpine
+MediaType: application/vnd.oci.image.index.v1+json
+Digest:    sha256:a174b894902bd3367e330d47cc2054367dc4917701776aaf336f41d83b65ec7a
+           
+Manifests: 
+  Name:      docker.io/valkey/valkey:9-alpine@sha256:cc15435e4fe8e285b161b8781eebf741773ee4bfbbe2504089feee7a0b2f1dfc
+  MediaType: application/vnd.oci.image.manifest.v1+json
+  Platform:  linux/amd64
+             
+  Name:      docker.io/valkey/valkey:9-alpine@sha256:71f925288d58e5296a268908e152e31f935ec9ebd64b098707853f053559ab54
+  MediaType: application/vnd.oci.image.manifest.v1+json
+  Platform:  linux/arm64
+             
+  Name:      docker.io/valkey/valkey:9-alpine@sha256:9124a2d5ca092dc6441d11833cd45100abcca74f5ace66218f290b5e81dca5d6
+  MediaType: application/vnd.oci.image.manifest.v1+json
+  Platform:  linux/arm/v7
+             
+  Name:      docker.io/valkey/valkey:9-alpine@sha256:7bf89a53b4dcce31e2f5bf2fbe08c8215800739832bea417ec0fddd36efc04ba
+  MediaType: application/vnd.oci.image.manifest.v1+json
+  Platform:  linux/ppc64le

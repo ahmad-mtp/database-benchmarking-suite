@@ -1,0 +1,247 @@
+# =============================================================================
+# WORKLOAD SPECIFICATION — the contract between a business case and the harness.
+# Filled in for UC-1: "Orders & inventory for a mid-market commerce platform".
+# This file is the unit of identity: its JCS-canonicalised SHA-256 names the run.
+# =============================================================================
+spec_version: "1.0.0"
+
+meta:
+  id: uc1-orders-inventory
+  title: Orders & inventory for a mid-market commerce platform
+  author: platform-architecture@example.com
+  created: "2026-09-01"
+  # Prose is REQUIRED. If a human cannot state the business case, the numbers below
+  # are unanchored. This text is reproduced verbatim at the top of every report.
+  business_case: >
+    Greenfield replacement for a spreadsheet + Shopify setup. Customers place orders
+    that must atomically decrement stock; overselling is a hard business failure, not
+    a degraded experience. Ops runs low-stock and revenue-by-day reports against the
+    same data. 18-month horizon before a re-architecture is acceptable.
+  # The honesty field. An unfilled fidelity_gap is a REPORT DEFECT — the harness
+  # refuses to emit a signed report without it.
+  fidelity_gap: >
+    Modelled from the incumbent Shopify export (Jan-Aug 2026) plus the ops team's
+    stated growth target. NOT modelled: seasonal Black Friday spike (est. 12x for
+    ~6 hours), returns/refunds flow, and the marketing team's planned recommendation
+    engine which may add a large read fan-out. Cardinalities are measured; the growth
+    curve is an assumption.
+
+# ----------------------------------------------------------------------------- 
+# 1. HARD REQUIREMENTS — evaluated as GATES before any container is started.
+#    A candidate that fails any of these is excluded and never benchmarked.
+# -----------------------------------------------------------------------------
+requirements:
+  transactions:
+    scope: multi_document          # none | single_document | multi_document | multi_shard
+    isolation_min: read_committed  # read_uncommitted|read_committed|repeatable_read|serializable
+    rationale: "Stock decrement + order insert must be atomic or we oversell."
+  consistency: strong_read_your_writes   # eventual | read_your_writes | strong_read_your_writes | linearizable
+  durability:
+    # Normalised across ALL engines. Phase-3 E5.4: default durability differs by
+    # 3 orders of magnitude between engines; comparing without this is meaningless.
+    commit: fsync_on_commit       # none | periodic | fsync_on_commit
+    max_data_loss_window: 0s
+  queries_must_support:
+    - secondary_index_lookup
+    - range_scan_with_order
+    - multi_entity_join          # ← the discriminating requirement for this case
+    - aggregate_group_by
+  schema:
+    evolution: migration_ok       # migration_ok | must_be_schemaless
+  licence_policy: osi_approved_only   # any | osi_approved_only | permissive_only
+  operational:
+    encryption_at_rest_available: true
+    audit_log_available: false
+    single_node_acceptable: true
+
+# -----------------------------------------------------------------------------
+# 2. DATA MODEL — entities, cardinality, growth. Drives the generator.
+# -----------------------------------------------------------------------------
+data:
+  seed: "uc1-seed-2026"          # index-derived (see exp06); NOT a PRNG stream seed
+  generator_version: "1.0.0"     # bump = different data; recorded in the manifest
+  entities:
+    - name: customers
+      rows: 50000
+      growth_per_month_pct: 6
+      fields:
+        - {name: customer_id, type: uuid, key: primary}
+        - {name: email, type: email, unique: true}
+        - {name: created_at, type: timestamp, range: ["2024-01-01", "2026-09-01"]}
+        - {name: country, type: categorical, categories: 24, distribution: {kind: hot_set, hot_fraction: 0.10, hot_traffic: 0.70}}
+    - name: skus
+      rows: 50000
+      growth_per_month_pct: 3
+      fields:
+        - {name: sku_id, type: int, key: primary}
+        - {name: title, type: text, mean_bytes: 60}
+        - {name: price_cents, type: int, range: [500, 50000]}
+        - {name: stock_qty, type: int, range: [0, 500]}
+        - {name: category_id, type: fk, references: categories.category_id}
+    - name: categories
+      rows: 240
+      fields:
+        - {name: category_id, type: int, key: primary}
+        - {name: name, type: text, mean_bytes: 20}
+    - name: orders
+      rows: 2000000
+      growth_per_month_pct: 8
+      fields:
+        - {name: order_id, type: int, key: primary}
+        - {name: customer_id, type: fk, references: customers.customer_id}
+        - {name: placed_at, type: timestamp, range: ["2024-01-01", "2026-09-01"]}
+        - {name: status, type: categorical, categories: 6}
+        - {name: total_cents, type: int, range: [500, 500000]}
+    - name: order_lines
+      rows_per_parent: {parent: orders, distribution: {kind: hot_set, mean: 2.4, max: 20}}
+      fields:
+        - {name: order_id, type: fk, references: orders.order_id}
+        - {name: sku_id, type: fk, references: skus.sku_id,
+           distribution: {kind: hot_set, hot_fraction: 0.20, hot_traffic: 0.80}}
+        - {name: qty, type: int, range: [1, 5]}
+
+# -----------------------------------------------------------------------------
+# 3. ACCESS PATTERNS — what the application actually does. Weights sum to 100.
+# -----------------------------------------------------------------------------
+access_patterns:
+  - id: place_order
+    weight: 12
+    kind: write
+    transactional: true
+    description: "Insert order + N lines, decrement stock, all-or-nothing."
+    steps:
+      - {op: read, entity: skus, by: primary_key, n: "{{order_lines_count}}", for_update: true}
+      - {op: insert, entity: orders, n: 1}
+      - {op: insert, entity: order_lines, n: "{{order_lines_count}}"}
+      - {op: update, entity: skus, by: primary_key, n: "{{order_lines_count}}", field: stock_qty}
+    slo: {p99_ms: 150, p50_ms: 25}
+
+  - id: order_history
+    weight: 30
+    kind: read
+    description: "Customer's last 20 orders with line items and SKU titles."
+    steps:
+      - {op: select, entity: orders, by: customer_id, order_by: placed_at, limit: 20,
+         join: [order_lines, skus]}
+    slo: {p99_ms: 100, p50_ms: 15}
+
+  - id: sku_lookup
+    weight: 45
+    kind: read
+    description: "Product detail page — single SKU by id."
+    steps:
+      - {op: select, entity: skus, by: primary_key, n: 1}
+    slo: {p99_ms: 30, p50_ms: 5}
+
+  - id: low_stock_report
+    weight: 8
+    kind: analytical
+    description: "All SKUs under reorder threshold, grouped by category."
+    steps:
+      - {op: aggregate, entity: skus, filter: "stock_qty < 20", group_by: category_id,
+         join: [categories]}
+    slo: {p99_ms: 2000, p50_ms: 500}
+
+  - id: revenue_by_day
+    weight: 5
+    kind: analytical
+    description: "Daily revenue for the last 90 days."
+    steps:
+      - {op: aggregate, entity: orders, filter: "placed_at > now() - 90d",
+         group_by: "date(placed_at)", agg: "sum(total_cents)"}
+    slo: {p99_ms: 3000, p50_ms: 800}
+
+# -----------------------------------------------------------------------------
+# 4. LOAD PROFILE — open-loop by construction (Phase-3 E5.2).
+# -----------------------------------------------------------------------------
+load:
+  model: open_loop                # open_loop | closed_loop (closed_loop forbidden for SLO claims)
+  arrival: poisson                # poisson | constant
+  target_rps: [200, 800, 2000, 5000]   # the harness sweeps these to find the knee
+  headroom_target_pct: 40         # "must sustain target at <=60% CPU"
+  duration:
+    warmup: 120s                  # discarded; must exceed one checkpoint/compaction cycle
+    measure: 600s
+    repeats: 5                    # >=3; 5 chosen from the exp05/exp02 variance data
+  client:
+    max_cpu_pct: 70               # run INVALID above this — driver became the bottleneck
+    connections: 64
+
+# -----------------------------------------------------------------------------
+# 5. CANDIDATES — including composite (multi-engine) candidates.
+# -----------------------------------------------------------------------------
+candidates:
+  - id: postgres-18
+    engines: [{ref: postgres, role: primary}]
+  - id: mongodb-8
+    engines: [{ref: mongodb, role: primary}]
+  - id: postgres-18-plus-valkey
+    engines: [{ref: postgres, role: primary}, {ref: valkey, role: cache}]
+    cache_policy: {pattern: read_through, ttl: 300s, applies_to: [sku_lookup]}
+  - id: clickhouse-26
+    engines: [{ref: clickhouse, role: primary}]
+    # expected to FAIL the transactions gate — included to prove the gate works
+
+# -----------------------------------------------------------------------------
+# 6. RESOURCE ENVELOPE — identical for every candidate. Non-negotiable.
+# -----------------------------------------------------------------------------
+resources:
+  per_engine:
+    cpuset: "2-5"                 # AFFINITY — required; --cpus alone does not hide cores (E2.1)
+    cpu_quota: 4.0
+    memory: 8GiB
+    memory_swap: 8GiB             # == memory => swap disabled
+    pids_limit: 4096
+    storage: {backend: named_volume}   # bind mounts and tmpfs are REJECTED (E4.1, E4.2)
+  # A composite candidate's engines SHARE this envelope, split explicitly.
+  # Otherwise "Postgres + Valkey" silently gets 2x the hardware.
+  composite_split:
+    postgres-18-plus-valkey: {postgres: 0.75, valkey: 0.25}
+  driver:
+    cpuset: "6-9"                 # load generator pinned to DIFFERENT cores
+    memory: 4GiB
+
+# -----------------------------------------------------------------------------
+# 7. SCORING — weights are human judgement and are recorded as such.
+# -----------------------------------------------------------------------------
+scoring:
+  weights_author: platform-architecture@example.com
+  weights_rationale: >
+    Latency weighted above throughput because the 18-month volume ceiling
+    (~5k rps) is inside every candidate's measured capacity, so tail latency is
+    the differentiator customers feel. Operational burden weighted high because
+    the team is four engineers with no dedicated DBA.
+  measured:
+    latency_slo_attainment: 0.30
+    throughput_headroom:    0.15
+    resource_efficiency:    0.10
+    storage_amplification:  0.05
+  qualitative:              # elicited from humans, NOT measured. Rendered separately.
+    operational_burden:     0.20
+    team_familiarity:       0.10
+    ecosystem_maturity:     0.05
+    licence_risk:           0.05
+  # REFERENCE-ANCHORED, not min-max-within-the-candidate-set. exp10 demonstrated
+  # min-max literally reversing the winner when an irrelevant candidate was added,
+  # and collapsing a 0.97-vs-0.99 photo finish into a 0.0-vs-1.0 landslide.
+  # Anchors are business facts and belong here, reviewed, rather than emerging from
+  # an accident of which candidates happened to be tested.
+  normalisation: reference_anchored
+  anchors:                        # [value scoring 0.0, value scoring 1.0]
+    latency_slo_attainment: [0.80, 1.00]    # veto floor .. perfect
+    throughput_headroom:    [1.00, 5.00]    # just-meets .. 5x headroom
+    resource_efficiency:    [0.00, 1.00]    # saturated .. idle
+    storage_amplification:  [0.01, 0.50]    # 100x amplification .. 2x
+    operational_burden:     [1.00, 5.00]    # rubric endpoints
+    team_familiarity:       [1.00, 5.00]
+    ecosystem_maturity:     [1.00, 5.00]
+    licence_risk:           [1.00, 5.00]
+  aggregation: weighted_sum
+  veto:
+    # Compensatory aggregation can hide a fatal weakness behind good averages.
+    # A veto is non-compensatory: no weight can rescue it.
+    - {criterion: latency_slo_attainment, min: 0.80,
+       reason: "An engine that misses the SLO 20%+ of the time is not a candidate."}
+  sensitivity:
+    method: weight_perturbation
+    perturbation_pct: 25          # report whether the winner survives ±25% on every weight

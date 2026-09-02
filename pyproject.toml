@@ -1,0 +1,56 @@
+[project]
+name = "dsel"
+version = "0.1.0"
+description = "Datastore selection decision harness — gate, measure, weigh"
+readme = "README.md"
+requires-python = "==3.13.*"
+dependencies = [
+    "pydantic>=2.9",
+    "typer>=0.15",
+    "rich>=13.9",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+dsel = "dsel.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dsel"]
+
+[tool.ruff]
+line-length = 96
+src = ["src", "tests"]
+# Archival evidence from the research phases, recorded 2026-09-01. It is not
+# harness source and must not be reformatted.
+extend-exclude = ["datastore-selection-automation"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dsel", "tests"]
+
+[tool.mypy]
+python_version = "3.13"
+packages = ["dsel"]
+mypy_path = "src"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+markers = [
+    "docker: needs a running Docker daemon; skipped when absent",
+    "slow: takes tens of seconds; deselect with -m 'not slow'",
+]

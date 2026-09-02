@@ -1,0 +1,31 @@
+baseline: postgres-18=0.7251  postgres-18-plus-valkey=0.7211  margin=0.0040
+winner = postgres-18
+
+±25% sweep:
+  FLIP: latency_slo_attainment x1.25 -> postgres-18-plus-valkey
+  FLIP: throughput_headroom x1.25 -> postgres-18-plus-valkey
+  FLIP: operational_burden x0.75 -> postgres-18-plus-valkey
+  FLIP: team_familiarity x0.75 -> postgres-18-plus-valkey
+  4/16 perturbations flip the winner
+
+breaking point per weight (x-factor at which the winner changes):
+  latency_slo_attainment   flips at x1.14  (0.30 -> 0.342)
+  throughput_headroom      flips at x1.07  (0.15 -> 0.161)
+  resource_efficiency      flips at x1.67  (0.10 -> 0.167)
+  storage_amplification    never flips within x0.01..x20
+  operational_burden       flips at x0.01  (0.20 -> 0.002)
+  team_familiarity         flips at x0.01  (0.10 -> 0.001)
+  ecosystem_maturity       never flips within x0.01..x20
+  licence_risk             never flips within x0.01..x20
+  ecosystem_maturity       never flips within x0.01..x20
+  licence_risk             never flips within x0.01..x20
+
+nearest breaking point, searched OUTWARD from x1.00 (direction matters):
+  latency_slo_attainment   increase to x1.134  (0.30 -> 0.340)  = 13.4% change
+  throughput_headroom      increase to x1.067  (0.15 -> 0.160)  = 6.7% change
+  resource_efficiency      increase to x1.667  (0.10 -> 0.167)  = 66.7% change
+  storage_amplification    never flips
+  operational_burden       decrease to x0.946  (0.20 -> 0.189)  = 5.4% change
+  team_familiarity         decrease to x0.839  (0.10 -> 0.084)  = 16.1% change
+  ecosystem_maturity       never flips
+  licence_risk             never flips

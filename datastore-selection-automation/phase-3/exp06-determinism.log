@@ -1,0 +1,22 @@
+=== (1) deterministic dataset generation ===
+  rows=200000
+  serial, forward        : 075924ad6fd0add7e71020fd00ec89de50e16030db3a096b8b2afb8ce0113b73
+  serial, REVERSE order  : 075924ad6fd0add7e71020fd00ec89de50e16030db3a096b8b2afb8ce0113b73  MATCH
+  8 threads, forward     : 075924ad6fd0add7e71020fd00ec89de50e16030db3a096b8b2afb8ce0113b73  MATCH
+  8 threads, REVERSE     : 075924ad6fd0add7e71020fd00ec89de50e16030db3a096b8b2afb8ce0113b73  MATCH
+  different seed         : 846521e7046c8e7099cd8dbfddbef0c765f3e720fb0b695005669d3f6b5ab2c6  DIFFER (correct)
+  fresh subprocess       : 075924ad6fd0add7e71020fd00ec89de50e16030db3a096b8b2afb8ce0113b73  MATCH
+  skew check: 80.1% of draws hit the hot 20% (target 80%)
+
+=== (2) spec canonicalisation ===
+  A (as authored)        : f6b3c6ef432e50246f54a5fd54831c79a1799c1c2bc3757404d782e767f13a73
+  B (keys reordered)     : f6b3c6ef432e50246f54a5fd54831c79a1799c1c2bc3757404d782e767f13a73  MATCH (correct)
+  C (target_rps 800->900): 77803b19ea461665176ab63a10d1928bfc466bd6d49543dde221c4d58bc4de7f  DIFFER (correct)
+
+=== (3) bundle manifest hashing ===
+  f28ff3673f858d512dd2869ae5ebc07671a31ad684795d205eb44cb2a77e4b6b  dataset.sha256
+  2688c48a540d119e142287c98f92bb0a92fed49c388e4bf60beae7e90044107d  metrics.ndjson
+  61174c94b2e450c01c3408a75de44981bf22bee29c2a5243f4474355aca20ff2  spec.json
+  bundle_root = f5a1b16d5eea96dcde4ce8783fd949ddae5adae0e5ca0579c36194d1fb8cb9d2
+  after tampering with one metric value:
+  bundle_root = a010c5663dc3d41bd8262495655ccc00f6618753bd7c303c3a8a82bb9aed1395  DETECTED

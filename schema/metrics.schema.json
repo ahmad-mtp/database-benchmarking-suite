@@ -1,0 +1,1105 @@
+{
+  "$defs": {
+    "AppRecord": {
+      "additionalProperties": false,
+      "description": "App-tier span timings and saturation.",
+      "properties": {
+        "app_recv_to_db_start_us": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "App Recv To Db Start Us"
+        },
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "cpu_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Pct"
+        },
+        "db_end_to_send_us": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Db End To Send Us"
+        },
+        "db_us": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Db Us"
+        },
+        "endpoint": {
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "errors": {
+          "default": 0,
+          "title": "Errors",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "app",
+          "default": "app",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "endpoint",
+        "count"
+      ],
+      "title": "AppRecord",
+      "type": "object"
+    },
+    "BackendRecord": {
+      "additionalProperties": false,
+      "description": "One backend/connection. The per-connection view the cliff work needs.",
+      "properties": {
+        "age_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age S"
+        },
+        "backend_id": {
+          "title": "Backend Id",
+          "type": "string"
+        },
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "engine": {
+          "title": "Engine",
+          "type": "string"
+        },
+        "kind": {
+          "const": "backend",
+          "default": "backend",
+          "title": "Kind",
+          "type": "string"
+        },
+        "query_start_age_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query Start Age S"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "State"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "vm_rss_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vm Rss Bytes"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        },
+        "wait_event": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait Event"
+        },
+        "wait_event_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wait Event Type"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "engine",
+        "backend_id"
+      ],
+      "title": "BackendRecord",
+      "type": "object"
+    },
+    "ContainerRecord": {
+      "additionalProperties": false,
+      "description": "`docker stats` and cgroup readings for one container.",
+      "properties": {
+        "blkio_read_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blkio Read Bytes"
+        },
+        "blkio_trusted": {
+          "default": true,
+          "title": "Blkio Trusted",
+          "type": "boolean"
+        },
+        "blkio_write_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blkio Write Bytes"
+        },
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "container": {
+          "title": "Container",
+          "type": "string"
+        },
+        "cpu_nr_throttled": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Nr Throttled"
+        },
+        "cpu_throttled_usec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Throttled Usec"
+        },
+        "cpu_usage_usec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cpu Usage Usec"
+        },
+        "kind": {
+          "const": "container",
+          "default": "container",
+          "title": "Kind",
+          "type": "string"
+        },
+        "memory_current": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Current"
+        },
+        "memory_events_oom": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Events Oom"
+        },
+        "memory_events_oom_kill": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Events Oom Kill"
+        },
+        "memory_max": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Max"
+        },
+        "pids_current": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pids Current"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "container"
+      ],
+      "title": "ContainerRecord",
+      "type": "object"
+    },
+    "EngineRecord": {
+      "additionalProperties": false,
+      "description": "Engine-wide internals: pg_stat_*, INFO, serverStatus, system.*.",
+      "properties": {
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "engine": {
+          "title": "Engine",
+          "type": "string"
+        },
+        "kind": {
+          "const": "engine",
+          "default": "engine",
+          "title": "Kind",
+          "type": "string"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Metrics",
+          "type": "object"
+        },
+        "sample_class": {
+          "default": "light",
+          "enum": [
+            "light",
+            "heavy"
+          ],
+          "title": "Sample Class",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "engine"
+      ],
+      "title": "EngineRecord",
+      "type": "object"
+    },
+    "LatencyWindowRecord": {
+      "additionalProperties": false,
+      "description": "Within-window latency estimate. For watching only, never for reporting.",
+      "properties": {
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "errors": {
+          "default": 0,
+          "title": "Errors",
+          "type": "integer"
+        },
+        "estimate_only": {
+          "const": true,
+          "default": true,
+          "title": "Estimate Only",
+          "type": "boolean"
+        },
+        "kind": {
+          "const": "latency_window",
+          "default": "latency_window",
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_us": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Us"
+        },
+        "op": {
+          "title": "Op",
+          "type": "string"
+        },
+        "p50_us": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P50 Us"
+        },
+        "p90_us": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P90 Us"
+        },
+        "p99_us": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P99 Us"
+        },
+        "rate_per_s": {
+          "title": "Rate Per S",
+          "type": "number"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        },
+        "window_ms": {
+          "title": "Window Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "window_ms",
+        "op",
+        "count",
+        "rate_per_s"
+      ],
+      "title": "LatencyWindowRecord",
+      "type": "object"
+    },
+    "NetRecord": {
+      "additionalProperties": false,
+      "description": "Socket and ephemeral-port state, for connection-lifecycle attribution.",
+      "properties": {
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "ephemeral_available": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ephemeral Available"
+        },
+        "ephemeral_used": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ephemeral Used"
+        },
+        "established": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Established"
+        },
+        "kind": {
+          "const": "net",
+          "default": "net",
+          "title": "Kind",
+          "type": "string"
+        },
+        "listen_drops": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Listen Drops"
+        },
+        "listen_overflows": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Listen Overflows"
+        },
+        "scope": {
+          "enum": [
+            "engine",
+            "driver",
+            "app"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "syn_recv": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Syn Recv"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "time_wait": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Time Wait"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "scope"
+      ],
+      "title": "NetRecord",
+      "type": "object"
+    },
+    "PhaseRecord": {
+      "additionalProperties": false,
+      "description": "A lifecycle boundary: provision, init, load, warmup, measure, collect, teardown.",
+      "properties": {
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "event": {
+          "enum": [
+            "begin",
+            "end"
+          ],
+          "title": "Event",
+          "type": "string"
+        },
+        "kind": {
+          "const": "phase",
+          "default": "phase",
+          "title": "Kind",
+          "type": "string"
+        },
+        "ok": {
+          "default": true,
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "phase": {
+          "enum": [
+            "gate",
+            "provision",
+            "init",
+            "load",
+            "warmup",
+            "measure",
+            "collect",
+            "teardown"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "phase",
+        "event"
+      ],
+      "title": "PhaseRecord",
+      "type": "object"
+    },
+    "PoolRecord": {
+      "additionalProperties": false,
+      "description": "Client-side connection pool state.",
+      "properties": {
+        "acquire_wait_us_p99": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Acquire Wait Us P99"
+        },
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "idle": {
+          "title": "Idle",
+          "type": "integer"
+        },
+        "in_use": {
+          "title": "In Use",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "pool",
+          "default": "pool",
+          "title": "Kind",
+          "type": "string"
+        },
+        "pool": {
+          "title": "Pool",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "size": {
+          "title": "Size",
+          "type": "integer"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "timeouts": {
+          "default": 0,
+          "title": "Timeouts",
+          "type": "integer"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        },
+        "waiting": {
+          "title": "Waiting",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "pool",
+        "size",
+        "in_use",
+        "idle",
+        "waiting"
+      ],
+      "title": "PoolRecord",
+      "type": "object"
+    },
+    "ValidityRecord": {
+      "additionalProperties": false,
+      "description": "A validity gate firing. Invalidate rather than report with a caveat.",
+      "properties": {
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "gate": {
+          "title": "Gate",
+          "type": "string"
+        },
+        "kind": {
+          "const": "validity",
+          "default": "validity",
+          "title": "Kind",
+          "type": "string"
+        },
+        "limit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "verdict": {
+          "enum": [
+            "OK",
+            "FLAG",
+            "INVALID",
+            "INCONCLUSIVE_DRIVER_BOUND"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "gate",
+        "verdict"
+      ],
+      "title": "ValidityRecord",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "discriminator": {
+    "mapping": {
+      "app": "#/$defs/AppRecord",
+      "backend": "#/$defs/BackendRecord",
+      "container": "#/$defs/ContainerRecord",
+      "engine": "#/$defs/EngineRecord",
+      "latency_window": "#/$defs/LatencyWindowRecord",
+      "net": "#/$defs/NetRecord",
+      "phase": "#/$defs/PhaseRecord",
+      "pool": "#/$defs/PoolRecord",
+      "validity": "#/$defs/ValidityRecord"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PhaseRecord"
+    },
+    {
+      "$ref": "#/$defs/LatencyWindowRecord"
+    },
+    {
+      "$ref": "#/$defs/ContainerRecord"
+    },
+    {
+      "$ref": "#/$defs/EngineRecord"
+    },
+    {
+      "$ref": "#/$defs/BackendRecord"
+    },
+    {
+      "$ref": "#/$defs/PoolRecord"
+    },
+    {
+      "$ref": "#/$defs/AppRecord"
+    },
+    {
+      "$ref": "#/$defs/NetRecord"
+    },
+    {
+      "$ref": "#/$defs/ValidityRecord"
+    }
+  ],
+  "title": "dsel metrics.ndjson record",
+  "x-schema-version": 1
+}

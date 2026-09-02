@@ -1,0 +1,46 @@
+==========================================================================
+THE PROBLEM: min-max normalises against whoever happens to be in the set
+==========================================================================
+
+  two candidates {A,B}
+    B: 0.6250
+    A: 0.3750
+    ranking: B > A   gap(A,B) = 0.2500
+
+  add irrelevant C  {A,B,C}
+    A: 0.8733
+    B: 0.7500
+    C: 0.0667
+    ranking: A > B > C   gap(A,B) = 0.1233
+
+  Two defects visible:
+   1. MAGNITUDE IS DESTROYED. slo 0.97 vs 0.99 -- a 2-point difference --
+      normalises to 0.000 vs 1.000, identical to what 0.10 vs 0.99 would give.
+      The model cannot tell a photo-finish from a landslide.
+   2. RANK REVERSAL RISK. Adding a candidate that wins nothing still changes
+      every existing score, because it moves the min/max anchors.
+
+==========================================================================
+THE FIX: normalise against absolute, spec-derived anchors
+==========================================================================
+
+  two candidates {A,B}
+    A: 0.7251
+    B: 0.7211
+    ranking: A > B   gap(A,B) = 0.0040
+
+  add irrelevant C  {A,B,C}
+    A: 0.7251
+    B: 0.7211
+    C: 0.2481
+    ranking: A > B > C   gap(A,B) = 0.0040
+
+  A's score with C absent : 0.7251
+  A's score with C present: 0.7251   UNCHANGED - immune to rank reversal
+  gap(A,B) is now 0.0040, not 0.2500 -- a photo finish
+  now LOOKS like a photo finish, which is the point.
+
+  Cost: someone must author the anchors. That is a feature, not a bug --
+  the anchors are business facts ('1x headroom is the floor, 5x is plenty')
+  and belong in the spec, reviewed, rather than emerging from an accident
+  of which candidates were tested.

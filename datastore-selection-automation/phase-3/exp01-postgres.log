@@ -1,0 +1,120 @@
+=== [1] PULL by index digest ===
+Digest: sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+Status: Downloaded newer image for postgres@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+docker.io/library/postgres@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+  File "<string>", line 1
+    print(f'{float('1788254343.652')-float('1788254322.162'):.3f}s')
+                    ^
+SyntaxError: f-string: unmatched '('
+pull_elapsed=
+
+=== [2] Resolved local identity ===
+Id=sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
+RepoDigests=["postgres@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"]
+Arch=arm64/linux
+Created=2026-08-13T19:17:15.385105296Z
+
+=== [3] START with resource limits + HEALTHCHECK ===
+container started
+
+=== [4] HEALTH GATE (poll .State.Health.Status) ===
+final_health=healthy
+  File "<string>", line 1
+    print(f'{float('1788254349.235')-float('1788254343.745'):.3f}s')
+                    ^
+SyntaxError: f-string: unmatched '('
+start_to_healthy=
+{
+    "Status": "healthy",
+    "FailingStreak": 0,
+    "Log": [
+        {
+            "Start": "2026-09-01T09:19:09.016744427Z",
+            "End": "2026-09-01T09:19:09.052354344Z",
+            "ExitCode": 0,
+            "Output": "127.0.0.1:5432 - accepting connections\n"
+        }
+    ]
+}
+
+=== [5] DID THE CGROUP LIMITS ACTUALLY APPLY? (macOS Docker Desktop check) ===
+nproc_visible=10
+cpu.max=200000 100000
+memory.max=2147483648
+memory.swap.max=0
+pids.max=512
+cgroup_version=v2
+meminfo_MemTotal=MemTotal:        8124516 kB
+
+=== [6] ENGINE VERSION + APPLIED CONFIG READ BACK FROM RUNNING SERVER ===
+PostgreSQL 18.6 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+checkpoint_timeout=300s [src=default]
+fsync=on [src=command line]
+max_connections=200 [src=command line]
+max_wal_size=1024MB [src=configuration file]
+server_version=18.6 [src=default]
+shared_buffers=655368kB [src=command line]
+synchronous_commit=on [src=command line]
+wal_level=replica [src=default]
+
+=== [7] LOAD: pgbench init (scale 10 ~ 1M rows) then a timed run ===
+800000 of 1000000 tuples (80%) of pgbench_accounts done (elapsed 0.37 s, remaining 0.09 s)
+900000 of 1000000 tuples (90%) of pgbench_accounts done (elapsed 0.42 s, remaining 0.05 s)
+1000000 of 1000000 tuples (100%) of pgbench_accounts done (elapsed 0.45 s, remaining 0.00 s)
+vacuuming...
+creating primary keys...
+done in 0.59 s (drop tables 0.00 s, create tables 0.00 s, client-side generate 0.47 s, vacuum 0.03 s, primary keys 0.09 s).
+  File "<string>", line 1
+    print(f'{float('1788254350.063')-float('1788254349.415'):.3f}s')
+                    ^
+SyntaxError: f-string: unmatched '('
+load_elapsed=
+pgbench_accounts rows=1000000
+pgbench_branches rows=10
+pgbench_history rows=0
+pgbench_tellers rows=100
+157 MB
+
+=== [8] WARMUP (discarded) then 3 MEASURED REPEATS ===
+--- warmup 10s (result discarded)
+latency average = 1.292 ms
+tps = 6193.316046 (without initial connection time)
+--- repeat 1 : 20s, 8 clients, 2 threads, rate-limited 800tps (-R) to expose coordinated omission handling
+number of transactions actually processed: 16090
+number of transactions skipped: 0 (0.000%)
+number of transactions above the 200.0 ms latency limit: 0/16090 (0.000%)
+latency average = 1.313 ms
+latency stddev = 0.696 ms
+rate limit schedule lag: avg 0.297 (max 13.194) ms
+tps = 804.680852 (without initial connection time)
+--- repeat 2 : 20s, 8 clients, 2 threads, rate-limited 800tps (-R) to expose coordinated omission handling
+number of transactions actually processed: 16024
+number of transactions skipped: 0 (0.000%)
+number of transactions above the 200.0 ms latency limit: 0/16024 (0.000%)
+latency average = 1.405 ms
+latency stddev = 1.874 ms
+rate limit schedule lag: avg 0.337 (max 50.943) ms
+tps = 801.366203 (without initial connection time)
+--- repeat 3 : 20s, 8 clients, 2 threads, rate-limited 800tps (-R) to expose coordinated omission handling
+number of transactions actually processed: 16009
+number of transactions skipped: 0 (0.000%)
+number of transactions above the 200.0 ms latency limit: 0/16009 (0.000%)
+latency average = 1.312 ms
+latency stddev = 0.698 ms
+rate limit schedule lag: avg 0.296 (max 17.193) ms
+tps = 800.670665 (without initial connection time)
+
+=== [9] METRIC COLLECTION: docker stats one-shot ===
+{"BlockIO":"0B / 1.23GB","CPUPerc":"2.33%","Container":"dsa-exp01-pg","ID":"e780340811c5","MemPerc":"10.76%","MemUsage":"220.4MiB / 2GiB","Name":"dsa-exp01-pg","NetIO":"1.17kB / 126B","PIDs":"9"}
+
+=== [10] TEARDOWN (idempotent — run twice) ===
+rm pass1 ok
+rm pass2 ok
+volume rm ok
+  File "<string>", line 1
+    print(f'{float('1788254421.653')-float('1788254421.437'):.3f}s')
+                    ^
+SyntaxError: f-string: unmatched '('
+teardown_elapsed=
+
+=== DONE ===

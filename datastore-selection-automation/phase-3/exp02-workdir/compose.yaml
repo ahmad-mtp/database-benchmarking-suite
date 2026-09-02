@@ -1,0 +1,17 @@
+name: dsa-exp02
+services:
+  valkey:
+    image: valkey/valkey@sha256:a174b894902bd3367e330d47cc2054367dc4917701776aaf336f41d83b65ec7a
+    command: ["valkey-server","--save","","--appendonly","no","--maxmemory","512mb","--maxmemory-policy","noeviction","--io-threads","2"]
+    ports: ["56379:6379"]
+    healthcheck:
+      test: ["CMD","valkey-cli","ping"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+      start_period: 1s
+    deploy:
+      resources:
+        limits:   { cpus: "2.0", memory: 2G, pids: 512 }
+        reservations: { cpus: "1.0", memory: 1G }
+    cpuset: "0-1"

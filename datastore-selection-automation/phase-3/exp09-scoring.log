@@ -1,0 +1,75 @@
+==============================================================================
+STEP 1 — GATE (runs BEFORE any container starts)
+==============================================================================
+  ✓ postgres-18                admitted to benchmarking
+  ✗ mongodb-8                  EXCLUDED
+      · licence SSPL-1.0 is not OSI-approved (spec requires licence_policy=osi_approved_only)
+  ✓ postgres-18-plus-valkey    admitted to benchmarking
+  ✗ clickhouse-26              EXCLUDED
+      · transaction scope 'none' < required 'multi_document'
+      · cannot provide durability=fsync_on_commit per-row
+
+  2/4 candidates benchmarked. Excluded candidates are NEVER scored -- a gate failure is not a low score.
+
+==============================================================================
+STEP 2 — DERIVED CRITERIA
+==============================================================================
+  candidate                       slo   hdrm  res_eff  stor_amp
+  postgres-18                    0.97   2.60    0.560    0.0498   (MEASURED)
+  postgres-18-plus-valkey        0.99   4.20    0.620    0.0498   (illustrative)
+
+==============================================================================
+STEP 3 — VETO (non-compensatory: no weight can rescue a vetoed candidate)
+==============================================================================
+  ✓ postgres-18                passes all vetoes
+  ✓ postgres-18-plus-valkey    passes all vetoes
+
+==============================================================================
+STEP 4 — NORMALISE + WEIGHT (min-max within the surviving set)
+==============================================================================
+  criterion                  w      postgres-18   postgres-18-pl
+  [M] slo_attainment      0.30  0.000x0.30=0.000  1.000x0.30=0.300
+  [M] throughput_headroom  0.15  0.000x0.15=0.000  1.000x0.15=0.150
+  [M] resource_efficiency  0.10  0.000x0.10=0.000  1.000x0.10=0.100
+  [M] storage_amplification  0.05  0.500x0.05=0.025  0.500x0.05=0.025
+  [Q] op_burden           0.20  1.000x0.20=0.200  0.000x0.20=0.000
+  [Q] familiarity         0.10  1.000x0.10=0.100  0.000x0.10=0.000
+  [Q] ecosystem           0.05  0.500x0.05=0.025  0.500x0.05=0.025
+  [Q] licence_risk        0.05  0.500x0.05=0.025  0.500x0.05=0.025
+                                   TOTAL 0.3750     TOTAL 0.6250
+
+  [M]=measured (60% of weight)   [Q]=human judgement (40% of weight)
+
+==============================================================================
+STEP 5 — RANKING
+==============================================================================
+  1. postgres-18-plus-valkey      0.6250
+  2. postgres-18                  0.3750
+
+  Winner: postgres-18-plus-valkey   margin over runner-up: 0.2500
+
+==============================================================================
+STEP 6 — SENSITIVITY (does the winner survive ±25% on every weight?)
+==============================================================================
+  16 perturbations tested (8 weights x ±25%).
+  ✓ 'postgres-18-plus-valkey' wins in ALL 16 perturbations. Ranking is robust
+    to ±25% on any single weight.
+
+  Breaking point per weight (how much must ONE weight change to flip it?):
+    slo_attainment         flips at x0.05 (weight 0.30 -> 0.015)
+    throughput_headroom    never flips within x0.05..x10
+    resource_efficiency    never flips within x0.05..x10
+    storage_amplification  never flips within x0.05..x10
+    op_burden              flips at x2.25 (weight 0.20 -> 0.450)
+    familiarity            flips at x3.50 (weight 0.10 -> 0.350)
+    ecosystem              never flips within x0.05..x10
+    licence_risk           never flips within x0.05..x10
+
+==============================================================================
+STEP 7 — PARETO FRONT (which candidates are not dominated on raw criteria?)
+==============================================================================
+  postgres-18                  on the Pareto front
+  postgres-18-plus-valkey      on the Pareto front
+
+  2 non-dominated candidate(s). Where the front has >1 member the weights
+  are doing the real work, and the reader should be told so explicitly.
