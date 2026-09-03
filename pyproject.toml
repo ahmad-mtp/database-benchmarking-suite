@@ -10,6 +10,7 @@ dependencies = [
     "rich>=13.9",
     "pyyaml>=6.0",
     "prometheus-client>=0.26.0",
+    "hdrhistogram>=0.10.7",
 ]
 
 [project.scripts]
@@ -47,6 +48,15 @@ python_version = "3.13"
 packages = ["dsel"]
 mypy_path = "src"
 strict = true
+
+# `hdrh` ships no py.typed marker. It is the reference HdrHistogram
+# implementation for Python and its log format is what the Java
+# HistogramLogProcessor reads back in S10's acceptance, so it is not
+# substitutable; the untyped import is narrowed to this one module rather than
+# relaxing strictness anywhere else.
+[[tool.mypy.overrides]]
+module = ["hdrh.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

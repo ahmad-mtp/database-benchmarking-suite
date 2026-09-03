@@ -21,11 +21,13 @@ app = typer.Typer(
     add_completion=False,
 )
 
-# Subcommand -> the phase of PLAN.md that implements it.
+# Subcommand -> the phase of PLAN.md that implements it. Kept honest as phases
+# land: `run` needs an adapter and a workload spec to drive, which arrive at
+# S13/S14, so pointing it at S10 once the driver exists would be a lie.
 _PENDING: dict[str, str] = {
     "gate": "G1",
     "plan": "S6",
-    "run": "S10",
+    "run": "S14",
     "score": "G2",
     "verify": "G3",
     "report": "G2",

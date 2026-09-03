@@ -262,6 +262,34 @@ per worker, multi-process supervisor, per-worker CPU gate.
 *Accept, and verify here not at M7:* a `.hlog` written from Python is read by the Java
 `HistogramLogProcessor` in a pinned JDK container with p50/p99/p99.9 matching within one
 bucket. The entire "third party recomputes percentiles" claim rests on this.
+*Done 2026-09-03.* **Passed — exactly, at p50/p99/p99.9 and at all 57 rows the processor
+printed.** But the acceptance as worded compares two things that are not the same
+quantity, and this had to be found before the claim could be made honestly.
+
+`HistogramLogProcessor` prints the **percentile iterator**, not `getValueAtPercentile`.
+The iterator walks buckets in one direction and each step is forced to a strictly higher
+bucket than the last, so where consecutive percentile levels land in the same bucket the
+later one is pushed outward; it also prints steps at 0.990234375, never at 0.99.
+Comparing its row against a nominal Python `p99` therefore measures the two
+implementations' percentile *conventions*. Measured at 2 000, 8 000, 20 000 and 60 000
+samples, that comparison disagrees by 1.08%, 1.07%, 1.14% and 0.94% — it does not shrink
+with sample size, because it was never sampling noise.
+
+The count column is unambiguous: "the value at which the cumulative count first reaches
+k" means one thing in both implementations. Compared on it, **every printed row matches
+exactly** — which is the claim that actually matters, since a third party reading our raw
+histogram must recover our distribution, not our rounding rule.
+
+Also settled at S10: a worker holds **one request in flight**, so `n` workers cannot
+deliver more than `n / service_time` however high the offered rate is set. That ceiling is
+not hidden — past it the worker falls behind its schedule, the lateness lands in every
+latency it records, and the lag gate fires `INCONCLUSIVE_DRIVER_BOUND`. Demonstrated: 8 ms
+of service against a 2.5 ms mean inter-arrival produced a driver-bound verdict and a p50
+above 100 ms, rather than a flattering p99. The arrival schedule is index-derived
+(`blake2b(seed│worker│index)`), so one arrival can be re-derived from the bundle months
+later without replaying the stream. Two logs are written per operation — corrected (from
+the scheduled start, reported) and uncorrected (from issue) — so the omission correction
+is checkable rather than asserted.
 
 **S11–S12 Rate ramp + pgbench calibration.** If the first-party driver disagrees with
 pgbench beyond the noise floor, the driver is wrong.
