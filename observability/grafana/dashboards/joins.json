@@ -1,0 +1,305 @@
+{
+  "uid": "dsel-joins",
+  "title": "dsel — joins",
+  "description": "Join behaviour under sustained load: spill, cache, plan shape and the app-tier share.",
+  "tags": [
+    "dsel"
+  ],
+  "timezone": "utc",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "join operation latency — within-window estimate, not the reported figure",
+      "description": "WITHIN-WINDOW ESTIMATE, not the reported figure. The HdrHistogram .hlog written into the audit bundle is authoritative; a scrape bucket must never become a reported percentile.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "µs"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_op_latency_estimate_microseconds{op=~\".*join.*\"}",
+          "legendFormat": "{{op}} {{quantile}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "join operation rate",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_op_rate_per_second{op=~\".*join.*\"}",
+          "legendFormat": "{{op}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "temp bytes spilled",
+      "description": "A join that spills to temp files has left work_mem behind.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_engine_metric{metric=\"temp_bytes_total\"}",
+          "legendFormat": "{{engine}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "blocks read against blocks hit",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "rate(dsbench_engine_metric{metric=\"blocks_read_total\"}[1m])",
+          "legendFormat": "read"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "rate(dsbench_engine_metric{metric=\"blocks_hit_total\"}[1m])",
+          "legendFormat": "hit"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "cache hit ratio",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_engine_metric{metric=\"cache_hit_ratio\"}",
+          "legendFormat": "{{engine}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "app-tier span breakdown for the join endpoint — within-window estimate, not the reported figure",
+      "description": "The gap between db and the two app spans is PATH B's cost. WITHIN-WINDOW ESTIMATE, not the reported figure. The HdrHistogram .hlog written into the audit bundle is authoritative; a scrape bucket must never become a reported percentile.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "µs"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_app_span_estimate_microseconds{endpoint=~\".*join.*\"}",
+          "legendFormat": "{{span}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "rows returned against rows fetched",
+      "description": "A ratio climbing under load is a plan reading far more than it needs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_engine_metric{metric=\"tup_returned_total\"} / ignoring(metric) dsbench_engine_metric{metric=\"tup_fetched_total\"}",
+          "legendFormat": "{{engine}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "lock waits",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_engine_metric{metric=\"locks_waiting\"}",
+          "legendFormat": "{{engine}}"
+        }
+      ]
+    }
+  ]
+}

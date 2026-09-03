@@ -12,13 +12,16 @@ The renderer is kept separate and holds no state of its own.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 
 from dsel.live.schema import (
     AnyRecord,
     AppRecord,
+    BackendRecord,
     ContainerRecord,
+    EngineRecord,
     LatencyWindowRecord,
+    NetRecord,
     PhaseRecord,
     PoolRecord,
     ValidityRecord,
@@ -77,6 +80,12 @@ class ScreenState:
     containers: dict[str, ContainerState] = field(default_factory=dict)
     pools: dict[str, PoolRecord] = field(default_factory=dict)
     app_endpoints: dict[str, AppRecord] = field(default_factory=dict)
+    engines: dict[str, EngineRecord] = field(default_factory=dict)
+    # Keyed by engine and backend id. Held per-backend because the connection
+    # work needs the individual view; the exporter aggregates before publishing
+    # so a 500-connection ramp cannot become 500 Prometheus series (S8b).
+    backends: dict[tuple[str, str], BackendRecord] = field(default_factory=dict)
+    net: dict[str, NetRecord] = field(default_factory=dict)
     validity: dict[str, ValidityRecord] = field(default_factory=dict)
 
     @property
@@ -167,6 +176,21 @@ def apply(state: ScreenState, record: AnyRecord) -> ScreenState:
         endpoints[record.endpoint] = record
         updates["app_endpoints"] = endpoints
 
+    elif isinstance(record, EngineRecord):
+        engines = dict(state.engines)
+        engines[record.engine] = record
+        updates["engines"] = engines
+
+    elif isinstance(record, BackendRecord):
+        backends = dict(state.backends)
+        backends[(record.engine, record.backend_id)] = record
+        updates["backends"] = backends
+
+    elif isinstance(record, NetRecord):
+        net = dict(state.net)
+        net[record.scope] = record
+        updates["net"] = net
+
     elif isinstance(record, ValidityRecord):
         validity = dict(state.validity)
         # A gate that has fired stays fired: a later OK must not erase an
@@ -185,3 +209,54 @@ def reduce_all(records: object) -> ScreenState:
     for record in records:  # type: ignore[attr-defined]
         state = apply(state, record)
     return state
+
+
+def snapshot(state: ScreenState) -> dict[str, object]:
+    """A canonical, JSON-serialisable view of the state.
+
+    S8a's criterion compares a live session against a replay. Comparing two
+    running terminals is not a check, so the state is dumped instead and the
+    two dumps are diffed. `sort_keys` at the JSON layer plus sorted mappings
+    here make the dump depend only on the state, never on insertion order.
+    """
+    return {
+        "records_seen": state.records_seen,
+        "first_t_ms": state.first_t_ms,
+        "last_t_ms": state.last_t_ms,
+        "elapsed_ms": state.elapsed_ms,
+        "cell": state.cell,
+        "phase": state.phase,
+        "phase_began_t_ms": state.phase_began_t_ms,
+        "completed_phases": list(state.completed_phases),
+        "warmup_ended_t_ms": state.warmup_ended_t_ms,
+        "measure_began_t_ms": state.measure_began_t_ms,
+        "worst_verdict": state.worst_verdict,
+        "total_rate": state.total_rate,
+        "total_errors": state.total_errors,
+        "ops": {op: asdict(value) for op, value in sorted(state.ops.items())},
+        "containers": {name: asdict(value) for name, value in sorted(state.containers.items())},
+        "pools": {
+            name: value.model_dump(mode="json", exclude_none=True)
+            for name, value in sorted(state.pools.items())
+        },
+        "app_endpoints": {
+            name: value.model_dump(mode="json", exclude_none=True)
+            for name, value in sorted(state.app_endpoints.items())
+        },
+        "engines": {
+            name: value.model_dump(mode="json", exclude_none=True)
+            for name, value in sorted(state.engines.items())
+        },
+        "backends": {
+            f"{engine}/{backend_id}": value.model_dump(mode="json", exclude_none=True)
+            for (engine, backend_id), value in sorted(state.backends.items())
+        },
+        "net": {
+            scope: value.model_dump(mode="json", exclude_none=True)
+            for scope, value in sorted(state.net.items())
+        },
+        "validity": {
+            gate: value.model_dump(mode="json", exclude_none=True)
+            for gate, value in sorted(state.validity.items())
+        },
+    }

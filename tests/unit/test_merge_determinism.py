@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from dsel.live.merge import MergeError, find_shards, merge_records, merge_to_file, sort_key
-from dsel.live.ndjson import ShardWriter
+from dsel.live.ndjson import ShardWriter, dumps
 from dsel.live.schema import (
     ContainerRecord,
     LatencyWindowRecord,
@@ -96,10 +96,7 @@ def test_one_hundred_shuffled_merges_are_byte_identical(tmp_path: Path) -> None:
     for _ in range(MERGES):
         shuffled = shards[:]
         rng.shuffle(shuffled)
-        data = "".join(
-            __import__("dsel.live.ndjson", fromlist=["dumps"]).dumps(r) + "\n"
-            for r in merge_records(shuffled)
-        ).encode()
+        data = "".join(dumps(r) + "\n" for r in merge_records(shuffled)).encode()
         digests.add(hashlib.sha256(data).hexdigest())
 
     assert len(digests) == 1, f"{len(digests)} distinct outputs across {MERGES} merges"
@@ -191,3 +188,43 @@ def test_two_writers_sharing_a_shard_are_refused(tmp_path: Path) -> None:
     )
     with pytest.raises(MergeError, match="seq did not advance"):
         list(merge_records(find_shards(shard_dir)))
+
+
+def test_a_merged_file_is_read_under_the_total_order(tmp_path: Path) -> None:
+    """`read_shard`'s per-writer rule would reject every real merge.
+
+    A merged file interleaves writers, so `seq` repeats by design. What must
+    hold is the full triple, and a file that breaks it is refused rather than
+    replayed in the wrong order.
+    """
+    from dsel.live.merge import read_merged
+
+    good = tmp_path / "metrics.ndjson"
+    good.write_text(
+        "\n".join(
+            dumps(record)
+            for record in (
+                PhaseRecord(t_ms=1000, w="a", seq=0, phase="warmup", event="begin"),
+                PhaseRecord(t_ms=1000, w="b", seq=0, phase="warmup", event="end"),
+                PhaseRecord(t_ms=1001, w="a", seq=1, phase="measure", event="begin"),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    assert [r.w for r in read_merged(good)] == ["a", "b", "a"], "repeated seq is legal here"
+
+    bad = tmp_path / "backwards.ndjson"
+    bad.write_text(
+        "\n".join(
+            dumps(record)
+            for record in (
+                PhaseRecord(t_ms=1001, w="a", seq=1, phase="measure", event="begin"),
+                PhaseRecord(t_ms=1000, w="a", seq=0, phase="warmup", event="begin"),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(MergeError, match="does not follow"):
+        list(read_merged(bad))

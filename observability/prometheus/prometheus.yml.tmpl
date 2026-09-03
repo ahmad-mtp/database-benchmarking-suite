@@ -1,0 +1,32 @@
+# A string.Template rendered by dsel.compose.observability at seed time.
+# Seeded into a named volume rather than bind-mounted: D7 forbids a VirtioFS
+# mount for the life of a run, and exp04 is the reason it is not negotiable.
+global:
+  # A local pipeline-validation run is minutes, not hours. One second is fine
+  # here and would not be on a real target -- this is not a reportable profile.
+  scrape_interval: 1s
+  scrape_timeout: 900ms
+  evaluation_interval: 5s
+  external_labels:
+    # These apply only on federation, remote-write and alerting -- Prometheus
+    # does not attach them to locally stored samples. The stamps that must be
+    # on every series are set as target labels below; these are here so an
+    # exported or federated copy carries them too.
+    profile: local
+    reportable: "false"
+
+scrape_configs:
+  - job_name: dsel
+    # The exporter reports the run's own timestamps only through metric values,
+    # never as sample timestamps: honouring them would let a replay overwrite
+    # history. Prometheus stamps scrape time.
+    honor_timestamps: false
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:${DSEL_EXPORTER_PORT}"]
+        labels:
+          run_id: "${DSEL_RUN_ID}"
+          # Target labels, so they are on every locally stored sample: a graph
+          # lifted out of Grafana still says it is not a reportable figure.
+          profile: local
+          reportable: "false"

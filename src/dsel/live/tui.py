@@ -11,6 +11,7 @@ only in where the records come from.
 
 from __future__ import annotations
 
+import io
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -21,9 +22,10 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from dsel.live.merge import find_shards, merge_records, read_shard
+from dsel.live.merge import find_shards, merge_records, read_merged
 from dsel.live.schema import AnyRecord
 from dsel.live.state import ScreenState, apply
+from dsel.live.tail import LiveTailer
 
 VERDICT_STYLE = {
     "OK": "green",
@@ -140,7 +142,7 @@ def replay_records(run_dir: Path) -> Iterator[AnyRecord]:
     """Records from a finished run: the merged file, or its shards."""
     merged = run_dir / "metrics.ndjson"
     if merged.is_file():
-        yield from read_shard(merged)
+        yield from read_merged(merged)
         return
     shards = find_shards(run_dir / "shards")
     if not shards:
@@ -159,29 +161,52 @@ def watch_replay(run_dir: Path, console: Console | None = None) -> ScreenState:
     return state
 
 
-def watch_live(
-    run_dir: Path, poll_s: float = 0.25, idle_timeout_s: float | None = None
-) -> ScreenState:
-    """Tail a running run's shards, returning the final screen state.
+def screen_text(state: ScreenState, width: int = 100) -> str:
+    """The rendered screen as plain text, for comparison and for the record.
 
-    Re-merges from the shard set each tick. The metrics file is the one source
-    of truth (D3): the TUI is a consumer like the Prometheus exporter, not a
-    second sampling path.
+    S8a asks for the warmup -> measure boundary to be *visibly* marked. That is
+    only checkable against what was actually drawn, so the same renderer is run
+    into a recording console rather than a second description of it.
     """
-    console = Console()
+    console = Console(width=width, record=True, file=io.StringIO(), no_color=True)
+    console.print(render(state))
+    return console.export_text()
+
+
+def watch_live(
+    run_dir: Path,
+    poll_s: float = 0.25,
+    idle_timeout_s: float | None = None,
+    console: Console | None = None,
+) -> ScreenState:
+    """Tail a run's shards while they are written, returning the final state.
+
+    Records arrive through `LiveTailer`, which applies the same total order the
+    offline merge does. That is what makes S8a's criterion hold: live and
+    replay share the reducer, the renderer *and* the ordering, so the only
+    remaining difference is when each record showed up.
+
+    The metrics stream is the single source of truth (D3) -- the TUI is a
+    consumer of it exactly like the Prometheus exporter, never a second
+    sampling path, so nothing here touches Docker.
+    """
+    console = console or Console()
     state = ScreenState()
-    seen = 0
+    tailer = LiveTailer(run_dir / "shards")
     last_change = time.monotonic()
+    seen = 0
     with Live(render(state), console=console, refresh_per_second=8) as live:
         while True:
-            records = list(replay_records(run_dir))
-            if len(records) > seen:
-                fresh = ScreenState()
-                for record in records:
-                    fresh = apply(fresh, record)
-                state, seen, last_change = fresh, len(records), time.monotonic()
+            for record in tailer.poll():
+                state = apply(state, record)
+            if tailer.ingested_count > seen:
+                seen, last_change = tailer.ingested_count, time.monotonic()
                 live.update(render(state))
             if idle_timeout_s is not None and time.monotonic() - last_change > idle_timeout_s:
                 break
             time.sleep(poll_s)
+        # The run is over, so the watermark no longer holds anything back.
+        for record in tailer.close():
+            state = apply(state, record)
+        live.update(render(state))
     return state

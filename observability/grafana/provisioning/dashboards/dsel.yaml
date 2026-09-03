@@ -1,0 +1,12 @@
+apiVersion: 1
+providers:
+  - name: dsel
+    type: file
+    disableDeletion: true
+    # The dashboards are seeded once into a named volume and never change while
+    # a run is in flight, so there is nothing to poll for.
+    updateIntervalSeconds: 86400
+    allowUiUpdates: false
+    options:
+      path: /etc/dsel/grafana/dashboards
+      foldersFromFilesStructure: false

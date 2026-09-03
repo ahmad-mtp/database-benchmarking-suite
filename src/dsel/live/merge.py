@@ -72,6 +72,36 @@ def read_shard(path: Path) -> Iterator[AnyRecord]:
             yield record
 
 
+def read_merged(path: Path) -> Iterator[AnyRecord]:
+    """Parse a merged metrics file, enforcing the *total* order.
+
+    A merged file interleaves writers, so `seq` repeats across lines by design
+    and `read_shard`'s per-writer rule would reject every real merge. What must
+    hold instead is that the full `(t_ms, w, seq)` triple strictly increases --
+    the same order the audit bundle's hash is taken over. Replaying a file that
+    does not satisfy it would put the screen out of step with the record the
+    bundle carries, so it is checked rather than assumed.
+    """
+    previous: SortKey | None = None
+    with path.open(encoding="utf-8") as handle:
+        for lineno, line in enumerate(handle, start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                record = RECORD_ADAPTER.validate_python(json.loads(stripped))
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise MergeError(f"{path.name}:{lineno}: {exc}") from exc
+            key = sort_key(record)
+            if previous is not None and key <= previous:
+                raise MergeError(
+                    f"{path.name}:{lineno}: {key} does not follow {previous}; a "
+                    "merged file must be in (t_ms, w, seq) order"
+                )
+            previous = key
+            yield record
+
+
 def find_shards(directory: Path) -> list[Path]:
     """Every shard in the directory, in a stable order.
 

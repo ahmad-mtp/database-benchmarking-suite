@@ -211,6 +211,20 @@ produces an `oom` record.
 live-observability requirement.**
 *Accept:* `dsel watch --replay <run-id>` on a finished run reaches the same final screen
 state as the live session did, and the warmup→measure boundary is visibly marked in both.
+*Done 2026-09-03.* The criterion is an ordering statement, not an arithmetic one, and the
+obvious tailer fails it. Screen state is a fold over records, so a live view that applies
+whatever is new in each shard lands somewhere the merge never does — a sampler writing
+every 300 ms delivers records long after the driver records they should have preceded. So
+`live/tail.py` runs the *same* k-way merge over sources that have not ended, holding each
+record until no shard can still undercut it (release while `t_ms <` the minimum last-seen
+`t_ms` across shards; drain unbounded at close). The screen therefore lags the slowest
+sampler's interval by construction — that is the price of live and replay agreeing.
+Measured: a 285-record run over three writers, live and replay final state and rendered
+screen byte-identical. Two file-level facts had to be handled rather than assumed away — a
+trailing line with no newline is not yet a record, and a shard appearing late with records
+older than the watermark is refused loudly. One real bug surfaced: `read_shard` enforces
+one-writer-per-shard, which a *merged* file legitimately violates, so `read_merged`
+enforces the total order instead.
 
 **S8b Prometheus + Grafana.** Tail-and-expose collector, provisioned dashboards
 (`now`, `connections`, `joins`, `validity`). Series budget ≤500 active, ≤5000 per run;
@@ -218,6 +232,30 @@ state as the live session did, and the warmup→measure boundary is visibly mark
 *Accept:* `count({__name__=~"dsbench_.*"})` stays ≤500 for a full run; every panel in all
 four dashboards resolves against a completed run with no "No data"; every latency panel
 carries a visible "within-window estimate, not the reported figure" annotation.
+*Done 2026-09-03.* Measured against a live stack: **peak 141 active series of the 500 cap,
+0 refused, 48 panel targets across the four dashboards, 48 resolved.** Three things had to
+change from the obvious build.
+
+*The budget needs admission control, or the acceptance number is meaningless.* A series
+count under the cap proves nothing on its own — an exporter that silently dropped families
+would also report one. `SeriesBudget` refuses past the cap and publishes
+`dsbench_series_refused_total`, and the acceptance asserts the pair: under the cap **and**
+zero refused.
+
+*The series that would blow the budget is the per-backend view.* A connection ramp to 500
+backends is 500 series per metric, and `step`/`repeat` as labels would multiply the whole
+set by the length of a ramp again. So backends are aggregated by state and wait event
+before publishing, `step` and `repeat` join from `dsbench_cell_info`, and engine internals
+come from an allowlist rather than from whatever keys the engine returned. The exporter
+holds 30 individual backends in state and publishes 7 series for them.
+
+*Prometheus `external_labels` do not reach locally stored samples.* `profile=local` and
+`reportable=false` were set there first and were absent from every query result. They are
+target labels now, so a graph lifted out of Grafana still carries the stamp.
+
+Nothing is bind-mounted: the rendered Prometheus config and the four dashboards are
+streamed into a named volume with `docker cp`, because a config bind mount is still a
+VirtioFS mount for the life of a run (D7), and Grafana's provisioner polls its directory.
 
 **S10 Open-loop driver.** Poisson arrival, latency from scheduled start, HdrHistogram
 per worker, multi-process supervisor, per-worker CPU gate.

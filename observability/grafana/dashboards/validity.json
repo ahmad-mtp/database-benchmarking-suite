@@ -1,0 +1,320 @@
+{
+  "uid": "dsel-validity",
+  "title": "dsel — validity",
+  "description": "Whether this run may be reported at all.",
+  "tags": [
+    "dsel"
+  ],
+  "timezone": "utc",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "gate verdicts",
+      "description": "1=OK 2=FLAG 3=INVALID 4=INCONCLUSIVE_DRIVER_BOUND. A cell is invalidated rather than reported with a caveat.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_validity_verdict",
+          "legendFormat": "{{gate}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "worst verdict this run",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_validity_worst",
+          "legendFormat": "worst"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "observed against limit",
+      "description": "Above 1 the gate has been breached.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_validity_observed / dsbench_validity_limit",
+          "legendFormat": "{{gate}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "app-tier CPU against the 70% gate",
+      "description": "App-tier CPU above 70% invalidates database-level claims: the tier saturates first and every engine looks identical.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_app_cpu_percent",
+          "legendFormat": "{{endpoint}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "series refused by the budget",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_series_refused_total",
+          "legendFormat": "refused"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_series_distinct_total",
+          "legendFormat": "distinct this run"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_series_budget_run_limit",
+          "legendFormat": "run cap"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "latency series are estimates",
+      "description": "Published so a dashboard can assert it: every latency series here is a within-window estimate and the .hlog is the authoritative record.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_latency_estimate_only",
+          "legendFormat": "always 1"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "warmup to measure boundary",
+      "description": "The boundary the TUI marks, carried here so both views agree.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_measure_boundary_timestamp_seconds",
+          "legendFormat": "{{boundary}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "records folded",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_records_total",
+          "legendFormat": "records"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_elapsed_seconds",
+          "legendFormat": "elapsed s"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,397 @@
+{
+  "uid": "dsel-connections",
+  "title": "dsel — connections",
+  "description": "The connection ramp: backends, pool, sockets and where throughput stops following them.",
+  "tags": [
+    "dsel"
+  ],
+  "timezone": "utc",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "backends",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_engine_metric{metric=\"backends\"}",
+          "legendFormat": "{{engine}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "backends by state",
+      "description": "Aggregated before publishing: one series per backend id would put a 500-connection ramp straight through the series budget.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_backends",
+          "legendFormat": "{{state}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "backends by wait event",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_backends_waiting",
+          "legendFormat": "{{wait_event_type}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "pool occupancy",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_pool_in_use",
+          "legendFormat": "{{pool}} in use"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_pool_idle",
+          "legendFormat": "{{pool}} idle"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_pool_waiting",
+          "legendFormat": "{{pool}} waiting"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_pool_size",
+          "legendFormat": "{{pool}} size"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "pool acquire wait p99 — within-window estimate, not the reported figure",
+      "description": "WITHIN-WINDOW ESTIMATE, not the reported figure. The HdrHistogram .hlog written into the audit bundle is authoritative; a scrape bucket must never become a reported percentile.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "µs"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_pool_acquire_wait_estimate_microseconds",
+          "legendFormat": "{{pool}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "throughput against backends",
+      "description": "The connection cliff is where these two stop moving together.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "sum(dsbench_op_rate_per_second)",
+          "legendFormat": "throughput"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_engine_metric{metric=\"backends\"}",
+          "legendFormat": "backends"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "sockets",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_net_sockets",
+          "legendFormat": "{{scope}} {{state}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "ephemeral ports",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_net_ephemeral_ports",
+          "legendFormat": "{{scope}} {{kind}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "mean backend RSS",
+      "description": "Per-backend memory growth is what turns a connection count into a memory limit.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {},
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_backend_rss_bytes_sum / dsbench_backend_rss_bytes_count",
+          "legendFormat": "{{engine}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "pool timeouts",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dsel-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dsel-prometheus"
+          },
+          "expr": "dsbench_pool_timeouts_total",
+          "legendFormat": "{{pool}}"
+        }
+      ]
+    }
+  ]
+}

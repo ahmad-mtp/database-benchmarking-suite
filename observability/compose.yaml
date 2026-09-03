@@ -1,0 +1,87 @@
+# The LIGHT observability profile (PLAN.md S2/S8b): Prometheus + Grafana only,
+# 1.5 GiB and one vCPU of quota between them, pinned to the host slice 0-1 so
+# they never contend with the engine (2-5) or the driver (6-9).
+#
+# No bind mounts anywhere. Configuration and dashboards are seeded into a named
+# volume by `dsel.compose.observability` before the stack starts -- D7 forbids a
+# VirtioFS mount for the life of a run, and exp04 measured what one costs.
+#
+# Images are pinned by OCI *index* digest. The resolved platform manifest digest
+# is recorded in the run manifest, never pinned here: a platform digest is
+# architecture-locked and would make this file unrunnable on amd64 CI.
+#
+# LICENCE: Grafana is AGPL-3.0. D9 is why the TUI was built first -- the
+# live-observability requirement is met by `dsel watch` alone, and this stack is
+# an addition that can be dropped whole if legal review says so.
+
+name: dsel-obs
+
+services:
+  prometheus:
+    image: prom/prometheus@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    container_name: dsel-obs-prometheus
+    command:
+      - --config.file=/etc/dsel/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=6h
+      - --web.enable-lifecycle
+    ports:
+      - "${DSEL_PROMETHEUS_PORT:-9090}:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - dsel-obs-config:/etc/dsel:ro
+      - dsel-obs-prometheus-data:/prometheus
+    cpuset: "0-1"
+    cpus: 0.5
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 512
+    labels:
+      com.dsel.managed: "true"
+      com.dsel.run: "${DSEL_RUN_ID}"
+      com.dsel.role: "observability"
+
+  grafana:
+    image: grafana/grafana@sha256:2175aaa91c96733d86d31cf270d5310b278654b03f5718c59de12a865380a31f
+    container_name: dsel-obs-grafana
+    environment:
+      GF_PATHS_PROVISIONING: /etc/dsel/grafana/provisioning
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD: dsel
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_USERS_DEFAULT_THEME: dark
+    ports:
+      - "${DSEL_GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - dsel-obs-config:/etc/dsel:ro
+      - dsel-obs-grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    cpuset: "0-1"
+    cpus: 0.5
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 512
+    labels:
+      com.dsel.managed: "true"
+      com.dsel.run: "${DSEL_RUN_ID}"
+      com.dsel.role: "observability"
+
+volumes:
+  dsel-obs-config:
+    labels:
+      com.dsel.managed: "true"
+      com.dsel.run: "${DSEL_RUN_ID}"
+  dsel-obs-prometheus-data:
+    labels:
+      com.dsel.managed: "true"
+      com.dsel.run: "${DSEL_RUN_ID}"
+  dsel-obs-grafana-data:
+    labels:
+      com.dsel.managed: "true"
+      com.dsel.run: "${DSEL_RUN_ID}"

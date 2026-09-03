@@ -9,6 +9,7 @@ dependencies = [
     "typer>=0.15",
     "rich>=13.9",
     "pyyaml>=6.0",
+    "prometheus-client>=0.26.0",
 ]
 
 [project.scripts]

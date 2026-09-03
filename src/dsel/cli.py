@@ -201,9 +201,24 @@ def watch(
     idle_timeout: Annotated[
         float | None, typer.Option(help="Exit after this many idle seconds (live mode).")
     ] = None,
+    state_out: Annotated[
+        Path | None,
+        typer.Option(help="Write the final screen state as canonical JSON (S8a check)."),
+    ] = None,
+    screen_out: Annotated[
+        Path | None,
+        typer.Option(help="Write the final rendered screen as plain text (S8a check)."),
+    ] = None,
+    prometheus_port: Annotated[
+        int | None,
+        typer.Option(help="Also expose the run's metrics for Prometheus on this port."),
+    ] = None,
 ) -> None:
     """Live TUI over the run's metrics stream; --replay re-runs a finished run."""
-    from dsel.live.tui import watch_live, watch_replay
+    import json
+
+    from dsel.live.state import snapshot
+    from dsel.live.tui import screen_text, watch_live, watch_replay
 
     target = replay or run
     if target is None:
@@ -212,7 +227,21 @@ def watch(
     if not target.is_dir():
         typer.secho(f"{target} is not a directory", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
+    if prometheus_port is not None:
+        # A second consumer of the same stream, never a second sampling path (D3).
+        from dsel.live.exporter import serve
+
+        serve(target, prometheus_port)
+        typer.echo(f"exporting on http://127.0.0.1:{prometheus_port}/metrics")
     state = watch_replay(target) if replay else watch_live(target, idle_timeout_s=idle_timeout)
+    # Both dumps come from the same functions the screen uses, so a diff of two
+    # sessions is a diff of what was actually shown (PLAN.md S8a).
+    if state_out is not None:
+        state_out.write_text(
+            json.dumps(snapshot(state), sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+    if screen_out is not None:
+        screen_out.write_text(screen_text(state), encoding="utf-8")
     typer.echo(
         f"\nfinal: {state.records_seen:,} records, "
         f"{len(state.ops)} ops, {len(state.containers)} containers, "
