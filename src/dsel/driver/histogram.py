@@ -44,6 +44,10 @@ SIGNIFICANT_FIGURES = 3
 
 CORRECTED = "corrected"
 UNCORRECTED = "uncorrected"
+# The wire portion of an operation, when the transport can time it: no client
+# machinery, no scheduling. Comparable to the app tier's `db_us`, and the gap
+# between it and `uncorrected` is the driver's own per-operation cost.
+INNER = "inner"
 
 
 def new_histogram() -> HdrHistogram:
@@ -57,6 +61,7 @@ class OpRecorder:
     op: str
     corrected: HdrHistogram = field(default_factory=new_histogram)
     uncorrected: HdrHistogram = field(default_factory=new_histogram)
+    inner: HdrHistogram = field(default_factory=new_histogram)
     lag: HdrHistogram = field(default_factory=new_histogram)
     window: HdrHistogram = field(default_factory=new_histogram)
     count: int = 0
@@ -64,7 +69,13 @@ class OpRecorder:
     window_count: int = 0
     window_errors: int = 0
 
-    def record(self, corrected_us: float, uncorrected_us: float, ok: bool = True) -> None:
+    def record(
+        self,
+        corrected_us: float,
+        uncorrected_us: float,
+        ok: bool = True,
+        inner_us: float | None = None,
+    ) -> None:
         """Record one completed operation.
 
         The lag is the difference, and it is recorded rather than derived so
@@ -75,6 +86,8 @@ class OpRecorder:
         self.corrected.record_value(corrected)
         self.uncorrected.record_value(uncorrected)
         self.lag.record_value(max(1, corrected - uncorrected))
+        if inner_us is not None:
+            self.inner.record_value(max(1, int(inner_us)))
         self.window.record_value(corrected)
         self.count += 1
         self.window_count += 1

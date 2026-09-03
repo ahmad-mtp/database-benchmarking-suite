@@ -53,6 +53,7 @@ from pathlib import Path
 from dsel.driver.clock import wait_until
 from dsel.driver.histogram import (
     CORRECTED,
+    INNER,
     UNCORRECTED,
     OpRecorder,
     hlog_name,
@@ -192,6 +193,7 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
                     corrected_us=(done - scheduled) * 1_000_000.0,
                     uncorrected_us=(done - actual) * 1_000_000.0,
                     ok=ok,
+                    inner_us=getattr(transport, "last_inner_us", None),
                 )
             if done - phase_start >= next_window:
                 _emit_windows(writer, spec, recorders, spec.window_s)
@@ -223,7 +225,10 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
         for kind, histogram in (
             (CORRECTED, recorder.corrected),
             (UNCORRECTED, recorder.uncorrected),
+            (INNER, recorder.inner),
         ):
+            if histogram.get_total_count() == 0:
+                continue
             path = write_hlog(
                 histograms / hlog_name(op, kind, spec.worker),
                 histogram,

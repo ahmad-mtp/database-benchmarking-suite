@@ -17,7 +17,7 @@ import json
 import sys
 from pathlib import Path
 
-from dsel.driver.histogram import CORRECTED, UNCORRECTED, read_hlog
+from dsel.driver.histogram import CORRECTED, INNER, UNCORRECTED, read_hlog
 from dsel.driver.pool import DriverResult, plan_workers, run_pool
 from dsel.driver.transport import PostgresFactory
 
@@ -49,7 +49,7 @@ def summarise(result: DriverResult, ops: tuple[str, ...]) -> dict[str, object]:
     }
     latency: dict[str, dict[str, float]] = {}
     for op in ops:
-        for kind in (CORRECTED, UNCORRECTED):
+        for kind in (CORRECTED, UNCORRECTED, INNER):
             path = result.hlogs.get(f"{op}/{kind}")
             if path is None:
                 continue

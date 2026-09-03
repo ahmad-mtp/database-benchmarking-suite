@@ -12,6 +12,8 @@ dependencies = [
     "prometheus-client>=0.26.0",
     "hdrhistogram>=0.10.7",
     "asyncpg>=0.31.0",
+    "fastapi>=0.141.1",
+    "uvicorn>=0.52.4",
 ]
 
 [project.scripts]

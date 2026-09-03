@@ -79,6 +79,28 @@ class ImagePin(Frozen):
         return f"{self.reference.split(':')[0]}@{self.index_digest}"
 
 
+class AppCeilingRecord(Frozen):
+    """The app tier's measured limit (PLAN.md S13).
+
+    In the manifest because S14 schedules PATH B against it. A ceiling that
+    lived only in the run that measured it would have to be re-measured or
+    guessed, and guessing is how a tier-saturated result gets published as a
+    database comparison.
+    """
+
+    noop_saturation_rate_per_s: float | None
+    """Where `/noop` crossed the CPU gate. `None` means it was never reached --
+    which is not the same as "no limit", and must not be read as one."""
+    noop_max_delivered_rate_per_s: float
+    """The highest rate served. Measured past the gate, so useless for planning."""
+    cpu_limit_pct: float
+    path_b_rate_per_s: float | None
+    ceiling_fraction: float
+    app_cpus: float
+    """The quota, which is the denominator of `app_tier_cpu_pct`."""
+    app_workers: int
+
+
 class VcpuSpeed(Frozen):
     """One vCPU's measured speed, with the noise that qualifies it."""
 
@@ -155,3 +177,16 @@ class Manifest(Frozen):
     vm: VmCapture
     vcpu_probe: VcpuProbe | None = None
     cpuset_interference: list[InterferenceSweepRecord] = Field(default_factory=list)
+    app_ceiling: AppCeilingRecord | None = None
+    ab_delta_valid: bool = False
+    """Whether the PATH A / PATH B difference may be reported as the app
+    tier's cost.
+
+    **False on every local run, and not a placeholder.** The delta is a
+    subtraction of two measurements taken on a machine where the driver, the
+    app tier, the engine and the observability stack share ten cores that
+    `cpuset` does not actually isolate -- S1 measured 20-30% cross-cpuset
+    interference. Each side of the subtraction carries that interference, and
+    the difference between two contaminated numbers is not a clean measure of
+    anything. The *shape* transfers; the number does not.
+    """

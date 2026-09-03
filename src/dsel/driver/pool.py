@@ -25,6 +25,7 @@ from pathlib import Path
 
 from dsel.driver.histogram import (
     CORRECTED,
+    INNER,
     UNCORRECTED,
     hlog_name,
     new_histogram,
@@ -103,7 +104,7 @@ def run_pool(
     aggregate: dict[str, Path] = {}
     summary: dict[str, dict[str, float]] = {}
     for op in ops:
-        for kind in (CORRECTED, UNCORRECTED):
+        for kind in (CORRECTED, UNCORRECTED, INNER):
             total = new_histogram()
             found = False
             for spec in specs:

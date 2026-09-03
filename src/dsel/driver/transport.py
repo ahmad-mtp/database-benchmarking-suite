@@ -15,9 +15,12 @@ a rerun reproduces the same target, and a failure can be replayed.
 
 from __future__ import annotations
 
+import contextlib
 import math
+import time
 from dataclasses import dataclass
 from hashlib import blake2b
+from http.client import HTTPConnection
 from typing import Protocol, runtime_checkable
 
 from dsel.driver.clock import spend
@@ -39,6 +42,15 @@ class Transport(Protocol):
 
     def close(self) -> None:
         """Release everything. Called even when the phase failed."""
+
+    # Optional. A transport that can time the wire portion of an operation --
+    # excluding its own client machinery -- sets this after each `execute`.
+    # It is what makes PATH A's number comparable to the app tier's `db_us`,
+    # which is measured inside an already-running event loop with the
+    # connection already in hand. Without it, PATH A carries a per-operation
+    # cost PATH B structurally cannot, and the two are not measuring the same
+    # thing however carefully they are compared.
+    last_inner_us: float | None
 
 
 def _uniform(seed: int, worker: int, index: int, salt: str) -> float:
@@ -131,6 +143,7 @@ class SyntheticTransport:
     seed: int = 20260903
     worker: int = 0
     offered_rate_per_s: float = 0.0
+    last_inner_us: float | None = None
     _opened: bool = False
 
     def open(self) -> None:
@@ -179,7 +192,9 @@ class SyntheticTransport:
             raise TransportError(f"{op}: synthetic failure at index {index}")
         # A model target that overshot its own service time by 50% would not
         # be a known quantity; `clock.spend` is why it does not.
-        spend(self.service_us(index) / 1_000_000.0)
+        service_us = self.service_us(index)
+        self.last_inner_us = service_us
+        spend(service_us / 1_000_000.0)
 
 
 # --- Postgres -------------------------------------------------------------
@@ -215,6 +230,7 @@ class PostgresTransport:
     seed: int = 20260903
     worker: int = 0
     statement: str = PGBENCH_SELECT
+    last_inner_us: float | None = None
     _loop: object = None
     _conn: object = None
 
@@ -255,10 +271,20 @@ class PostgresTransport:
         if loop is None or conn is None:
             raise TransportError("transport used before open()")
         assert isinstance(loop, asyncio.AbstractEventLoop)
+        aid = self.account_id(index)
+
+        async def issue() -> None:
+            # Timed inside the coroutine, so the enclosing
+            # `run_until_complete` -- an entire event-loop turn per operation,
+            # which the app tier does not pay per request -- falls outside.
+            started = time.perf_counter_ns()
+            try:
+                await conn.fetchval(self.statement, aid)  # type: ignore[attr-defined]
+            finally:
+                self.last_inner_us = (time.perf_counter_ns() - started) / 1000.0
+
         try:
-            loop.run_until_complete(
-                conn.fetchval(self.statement, self.account_id(index))  # type: ignore[attr-defined]
-            )
+            loop.run_until_complete(issue())
         except Exception as exc:  # asyncpg raises a wide family; all count as errors
             raise TransportError(f"{op}: {exc}") from exc
 
@@ -286,4 +312,89 @@ class PostgresFactory:
             seed=seed,
             worker=worker,
             statement=self.statement,
+        )
+
+
+# --- the app tier (PATH B) -------------------------------------------------
+
+
+@dataclass(slots=True)
+class HttpTransport:
+    """One keep-alive HTTP connection to the app tier.
+
+    `http.client` from the standard library rather than a client package. The
+    S12 calibration showed how much of a "latency" figure can be the client's
+    own cost -- pgbench's own scheduler was 88% of what it reported -- so the
+    thinnest thing that can issue a request and read a response is the right
+    one here. It is also one connection held open for the phase, matching the
+    one-request-in-flight-per-worker model exactly.
+    """
+
+    host: str
+    port: int = 8000
+    path_template: str = "/noop"
+    scale: int = 10
+    seed: int = 20260903
+    worker: int = 0
+    timeout_s: float = 30.0
+    # Always `None`: the engine interval on PATH B happens inside the app tier,
+    # which times it itself and writes its own histogram. A number invented
+    # here would be the tier's cost mislabelled as the engine's.
+    last_inner_us: float | None = None
+    _conn: HTTPConnection | None = None
+
+    @property
+    def rows(self) -> int:
+        return self.scale * PGBENCH_ACCOUNTS_PER_SCALE
+
+    def open(self) -> None:
+        self._conn = HTTPConnection(self.host, self.port, timeout=self.timeout_s)
+        self._conn.connect()
+
+    def close(self) -> None:
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    def account_id(self, index: int) -> int:
+        return 1 + int(_uniform(self.seed, self.worker, index, "aid") * self.rows)
+
+    def execute(self, op: str, index: int) -> None:
+        conn = self._conn
+        if conn is None:
+            raise TransportError("transport used before open()")
+        path = self.path_template.format(aid=self.account_id(index))
+        try:
+            conn.request("GET", path)
+            response = conn.getresponse()
+            body = response.read()
+        except Exception as exc:
+            # A broken keep-alive connection cannot be reused; reconnecting
+            # here rather than failing every later request keeps one blip from
+            # invalidating a whole cell.
+            self.close()
+            with contextlib.suppress(Exception):  # the tier may be gone entirely
+                self.open()
+            raise TransportError(f"{op} {path}: {exc}") from exc
+        if response.status >= 400:
+            raise TransportError(f"{op} {path}: HTTP {response.status} {body[:120]!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class HttpFactory:
+    """A picklable factory for `HttpTransport` (spawn crosses a pickle)."""
+
+    host: str
+    port: int = 8000
+    path_template: str = "/noop"
+    scale: int = 10
+
+    def __call__(self, spec: object) -> HttpTransport:
+        return HttpTransport(
+            host=self.host,
+            port=self.port,
+            path_template=self.path_template,
+            scale=self.scale,
+            seed=getattr(spec, "seed", 20260903),
+            worker=getattr(spec, "worker", 0),
         )

@@ -375,11 +375,72 @@ ceiling before wiring PATH B, so app-tier saturation is a known number, not a su
 *Accept:* `/noop` ceiling is measured and written to the manifest; driving past it makes
 the `app_tier_cpu_pct` gate fire and stamp `INVALID(app_tier_saturated)` — the gate is
 demonstrated tripping, not merely implemented.
+*Done 2026-09-03.* **Passed.** At half a core and one uvicorn worker the tier saturates at
+**900/s**, which sets PATH B's rate at 540/s (60%). The gate has a closed side as well as an
+open one — 20.4% at 200/s, 50.3% at 500/s, then 73.3% and INVALID(app_tier_saturated) at
+900/s — so it is a gate and not a constant. It is stamped into the run's own
+`metrics.ndjson`, not derived afterwards: a cell is invalidated by something that happened
+during it, and the record has to be in the stream the bundle hashes.
+
+**Reading the CPU after a step is not reading the CPU.** The first version sampled `/cpu`
+once when each step finished, which is after the ramp has torn its worker processes down,
+so the tier's most recent one-second window was part load and part idle. The curve came out
+non-monotonic — 93.7% at 1400/s and 65.1% at 2800/s — and *the gate re-closed above a
+ceiling it had already crossed*. A thread now samples throughout each step and the statistic
+is the peak, because a tier that spends part of a step above the limit is saturated for
+that part. Above the limit the readings plateau near the quota rather than rising, which is
+the container being throttled; monotonicity is only required below the gate.
+
+`AppCeilingRecord` distinguishes two numbers that are easy to conflate: the rate where the
+gate fires (the planning number) and the highest rate ever served (measured past the gate,
+so any result taken there is already invalid).
 
 **S14 PATH B.** Driver→app→DB, scheduled against the measured app ceiling (capped at 60%
 of it locally).
 *Accept:* for the same workload, PATH B's `t_db_end − t_db_start` distribution overlaps
 PATH A's latency distribution; `ab_delta_valid=false` is stamped on every local run.
+*Done 2026-09-03.* **Passed, after the comparison found three instrumentation faults —
+which is what it is for.**
+
+| | p10 | p50 | p90 | p99 |
+|---|---|---|---|---|
+| PATH A driver→engine (inner) | 67 | **81** | 100 | 136 |
+| PATH B app→engine (`db_us`) | 58 | **67** | 86 | 144 |
+| PATH B app total | 205 | 228 | 265 | 364 |
+
+Bulk overlaps; medians 1.21× apart. Getting there took three fixes:
+
+1. **Pool acquisition was inside the engine interval.** `span.db_begin()` fired before
+   `pool.acquire()`, so PATH B's "engine interval" read 142 µs against PATH A's *whole*
+   latency of 101 µs — the tier appearing slower at the engine than the driver was
+   end-to-end. Acquisition is the tier's grip on the engine, not the engine: it queues, it
+   is bounded by pool size, and at S16 it is what produces the connection cliff.
+2. **The span started after the framework had finished.** A span created inside a handler
+   begins after parsing, routing and validation and ends before serialisation, and the
+   tier's own cost came out as **1 µs** — the framework had made itself invisible to its own
+   instrumentation. ASGI middleware now owns both outer instants; the tier's real cost is
+   162 µs at p50.
+3. **PATH A's latency is not comparable to PATH B's `db_us`.** The driver pays an entire
+   event-loop turn per operation, which the app tier does not pay per request and which
+   structurally cannot appear in its `db_us`. Comparing the two end-to-end is the same
+   mistake S12 found in pgbench — a client cost read as the engine's. The driver now also
+   records an *inner* histogram timed inside the coroutine; **the difference, 21 µs at p50,
+   is the driver's own per-operation cost, reported rather than buried.**
+
+The residual after all three is 1.21×, and it has a direction: the driver's own view of
+the engine is always the slower one. The interquartile ranges sit *adjacent* rather than
+overlapping — 75–93 against 62–74, missing by a microsecond — so the overlap band is stated
+as p10–p90 and the residual is asserted by direction and bound instead of being tuned away.
+The likely cause is the driver's spin-wait: four workers each spinning the last 1.5 ms of
+every inter-arrival is about 0.8 of a core of contention on cpuset 6–9 that the tier on
+0–1 does not have. **UNVERIFIED** — the direction and the bound are asserted, the
+explanation is not.
+
+`ab_delta_valid=false` is the `Manifest` default and not a placeholder. The tempting number
+is `PATH B total − PATH A total = the app tier's cost`; it subtracts two measurements taken
+where driver, tier, engine and observability share ten cores that `cpuset` does not isolate
+(S1: 20–30% across sets). Each side carries that interference, so the difference is not a
+clean measure of anything. The 162 µs is a shape, not a figure to report.
 
 **S15 Phenomena derivation.** `phenomena/*` reads `metrics.ndjson` and never touches
 Docker or the engine; `live/sampler/*` writes records and never derives a phenomenon.
