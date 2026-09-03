@@ -72,6 +72,7 @@ class RampStep:
     def point(self) -> Point:
         """This step as a `phenomena` point, which is where the rules live."""
         return Point(
+            x=self.offered_rate_per_s,
             offered_rate_per_s=self.offered_rate_per_s,
             achieved_rate_per_s=self.achieved_rate_per_s,
             completed=self.completed,

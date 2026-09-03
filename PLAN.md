@@ -503,6 +503,65 @@ count rises, with knee and collapse re-derivable from `metrics.ndjson` alone; (b
 `max_connections=32` run attributes every refusal to a named mechanism with zero
 `unknown` causes.
 
+*(c) Done 2026-09-03. Passed:* 32 opened, 34 failures, **zero unattributed**, three named
+mechanisms. `max_connections` is not a runtime knob, so the provocation gets its own
+provision cycle — it cannot ride along on a run measuring something else.
+
+Two mechanisms were provoked rather than one, because a table that only ever sees
+`max_connections` has been shown to return a constant, not to discriminate. The second one
+exposed a real limit of client-side evidence: **when Postgres reaps an idle-in-transaction
+session it writes a FATAL and closes the socket, and the client's next statement finds
+nothing left to receive an error from.** It arrives as `server_closed`, with no SQLSTATE
+and no reason. For anything the server initiates, the client's account is not evidence. The
+engine is now provisioned with `%e` in `log_line_prefix` and its log is read as a second
+source; without `%e` the attribution would be matching English prose and would break on a
+translated server.
+
+Attribution is by SQLSTATE first, errno second, text last, and an unmatched failure is
+loudly `unknown` rather than bucketed into the nearest neighbour — a wrong name is worse
+than an admitted gap, because a wrong name gets acted on.
+
+*(a) 2026-09-03 — the measured effect was thermal, and finding that out took six runs.*
+Run in ascending rung order, five consecutive ramps each reported a clean 10–15% fall in
+throughput from 8 connections to 32, then a plateau. Medians from one of them: 3891, 3534,
+3321, 3308, 3345, 3333 per second across 8→256 connections. It looked like the result
+PLAN.md predicted. **The sixth run, on a machine that had been under continuous Docker load
+for forty minutes, came out flat — 3181, 3202, 3149, 3181, 3226, 3125 — at a level 15%
+below all five.**
+
+Ascending order makes rung position a proxy for elapsed time, and on this host elapsed time
+is a proxy for temperature: the first rung of every ramp ran on a cooler machine than the
+last. The rung order is randomised per repeat now, from the seed, the same block design
+`audit/interference.py` uses. No directional claim is asserted until the corrected
+measurement is in.
+
+Three other things had to be fixed before the question was even askable:
+
+- **`collapse` fired on a single dip.** The rule returned the first point below the running
+  peak by 5%, and a 6.7% blip at one rung — contradicted by the next three — was reported
+  as a collapse. It requires the fall to be *sustained* now. An error-rate breach still
+  fires immediately, because errors are not noise.
+- **Repeats were not pooled.** Left as separate points, the running peak becomes the best
+  single pass of the best rung and every later drop is measured against that pass's own
+  good luck. Repeats are pooled by median now, which is what repeats are for.
+- **The engine has to be saturated or the ramp measures nothing.** At 2500/s it delivered
+  2484/s at every rung from 8 to 128 — flat, with the extra connections simply idle.
+  Contention needs something to contend for; the ramp runs at 8000/s against a one-core
+  engine, which serves about 3200/s.
+
+The connection count on the axis is the engine's own `backends` reading, snapped to the
+rung, never the number the ramp asked for — the cliff is precisely where those two stop
+being the same.
+
+*(b) 2026-09-03 — the first soak produced a degenerate interval, and that is now detected.*
+24 connections doing identical work gave 21 *identical* per-backend slopes: every bootstrap
+resample had the same median, the interval came out with zero width, and it "excluded zero"
+for a reason that had nothing to do with memory. `GrowthResult.degenerate` reports it, and
+the acceptance requires `significant` — excludes zero **and** not degenerate. The soak now
+gives each connection its own statement (point lookup, range count, sort, join), its own
+slice of the key space and its own cadence, because production connections are not clones
+either. A ≥1 h soak with that workload is running; its result is not yet in.
+
 **S19 Joins.** Plausibility pre-flight (`EXPLAIN ANALYZE` assertions, run *before* the
 cell starts), plan fingerprinting and flip detection, `work_mem` × nodes × connections
 projection asserted against `memory.max`, temp spill from `pg_stat_database`.

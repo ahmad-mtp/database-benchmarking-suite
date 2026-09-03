@@ -35,15 +35,29 @@ Per cell the statistic is the count-weighted *mean* of the window estimates.
 The maximum was tried first and is unusable: it is one sample of a tail, it
 moves with whatever else the machine is doing, and on a busy host it inflated
 the baseline cell enough to move the knee a whole step.
+
+**Repeats are pooled, by median.** A run matrix has repeats precisely so that
+one unlucky pass does not become a landmark, and leaving them as separate
+points defeats that twice over: the running peak becomes the best single
+observation of the best rung, and the drop measured against it is inflated by
+that rung's own noise. Measured on a connection ramp with three repeats, the
+peak rung's three passes spanned 3858-3933/s; using the top of that range as
+the reference moved the apparent drop by two points.
 """
 
 from __future__ import annotations
 
+import statistics
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from dsel.live.cell import Cell, CellError
-from dsel.live.schema import AnyRecord, LatencyWindowRecord, ValidityRecord
+from dsel.live.cell import Cell
+from dsel.live.schema import (
+    AnyRecord,
+    EngineRecord,
+    LatencyWindowRecord,
+    ValidityRecord,
+)
 
 DELIVERY_TOLERANCE = 0.03
 ERROR_TOLERANCE = 0.001
@@ -56,14 +70,25 @@ DRIVER_BOUND = "INCONCLUSIVE_DRIVER_BOUND"
 
 @dataclass(frozen=True, slots=True)
 class Point:
-    """One step of a load curve, however it was obtained."""
+    """One step of a load curve, however it was obtained.
 
-    offered_rate_per_s: float
+    `x` is the axis being ramped -- the offered rate for a rate ramp, the
+    connection count for a connection ramp. `offered_rate_per_s` is carried
+    separately and always means the offered rate, because `delivered` has to
+    compare achieved against offered whichever axis is moving. On a connection
+    ramp the offered rate is held constant and the connections move, which is
+    the entire point of that ramp: throughput must not depend on how many
+    connections were used to deliver the same load, and where it starts to, the
+    connections have become the bottleneck.
+    """
+
+    x: float
     achieved_rate_per_s: float
     completed: int
     errors: int
     p99_us: float
     verdict: str = "OK"
+    offered_rate_per_s: float = 0.0
 
     @property
     def error_rate(self) -> float:
@@ -82,7 +107,8 @@ class Point:
 
 
 def max_sustainable(points: Iterable[Point]) -> float | None:
-    delivered = [p.offered_rate_per_s for p in points if p.delivered]
+    """The largest `x` that was actually delivered."""
+    delivered = [p.x for p in points if p.delivered]
     return max(delivered) if delivered else None
 
 
@@ -95,26 +121,47 @@ def knee(points: Iterable[Point], factor: float = KNEE_FACTOR) -> float | None:
         return None
     for point in ordered[1:]:
         if point.p99_us > baseline * factor:
-            return point.offered_rate_per_s
+            return point.x
     return None
 
 
 def collapse(points: Iterable[Point]) -> float | None:
+    """Where throughput turned over **and stayed over**.
+
+    The sustained part is not a nicety. The first version returned the first
+    point below the running peak by `COLLAPSE_DROP`, and on a real connection
+    ramp -- flat within noise from 8 to 256 connections -- a single 6.7% dip
+    at one rung was enough to report a collapse that the next three rungs
+    plainly contradicted. A collapse that recovers is a measurement blip, and
+    calling it a collapse would have a reader cap a pool at a number that
+    means nothing.
+
+    An error-rate breach is different and does fire immediately: errors are not
+    noise, and a rung that started failing has already answered the question.
+    """
+    ordered = list(points)
     best = 0.0
-    for point in points:
+    for index, point in enumerate(ordered):
         if point.error_rate > COLLAPSE_ERRORS:
-            return point.offered_rate_per_s
+            return point.x
         if best > 0 and point.achieved_rate_per_s < best * (1.0 - COLLAPSE_DROP):
-            return point.offered_rate_per_s
+            threshold = best * (1.0 - COLLAPSE_DROP)
+            if all(later.achieved_rate_per_s < threshold for later in ordered[index:]):
+                return point.x
         best = max(best, point.achieved_rate_per_s)
     return None
 
 
+RATE_AXIS = "offered_rate_per_s"
+CONNECTION_AXIS = "connections"
+
+
 @dataclass(frozen=True, slots=True)
 class Curve:
-    """A load curve and its three landmarks."""
+    """A load curve and its three landmarks, on whichever axis was ramped."""
 
     points: tuple[Point, ...]
+    axis: str = RATE_AXIS
 
     @property
     def max_sustainable_rate_per_s(self) -> float | None:
@@ -128,44 +175,57 @@ class Curve:
     def collapse_rate_per_s(self) -> float | None:
         return collapse(self.points)
 
-    def landmarks(self) -> dict[str, float | None]:
+    def landmarks(self) -> dict[str, float | None | str]:
         return {
+            "axis": self.axis,
             "max_sustainable_rate_per_s": self.max_sustainable_rate_per_s,
             "knee_rate_per_s": self.knee_rate_per_s,
             "collapse_rate_per_s": self.collapse_rate_per_s,
         }
 
 
-def curve_from_records(records: Iterable[AnyRecord]) -> Curve:
-    """Rebuild a load curve from a metrics stream alone.
+@dataclass(frozen=True, slots=True)
+class CellSummary:
+    """One cell reduced to the numbers a curve needs, keyed by its id."""
 
-    The offered rate comes from the cell id, which is why the id is parsed
-    rather than split: a rate read out of a malformed id would silently
-    reorder the curve. The achieved rate is the completed count over the span
-    the windows actually cover -- not over a nominal duration nobody recorded.
+    cell_id: str
+    cell: Cell
+    achieved_rate_per_s: float
+    completed: int
+    errors: int
+    p99_us: float
+    verdict: str
+    backends: float | None
+
+
+def summarise_cells(records: Iterable[AnyRecord]) -> list[CellSummary]:
+    """Group a metrics stream into cells. The one pass both curves share.
+
+    Grouping is by cell id, never by any one field of it: a connection ramp
+    holds the rate fixed and varies `step`, so two cells of the same ramp can
+    agree on rate, engine, scenario and repeat and still be different cells.
     """
     windows: dict[str, list[LatencyWindowRecord]] = {}
     verdicts: dict[str, list[str]] = {}
+    backends: dict[str, list[float]] = {}
     order: list[str] = []
     for record in records:
-        if isinstance(record, LatencyWindowRecord) and record.cell:
+        if record.cell is None:
+            continue
+        if isinstance(record, LatencyWindowRecord):
             if record.cell not in windows:
                 windows[record.cell] = []
                 order.append(record.cell)
             windows[record.cell].append(record)
-        elif isinstance(record, ValidityRecord) and record.cell:
+        elif isinstance(record, ValidityRecord):
             verdicts.setdefault(record.cell, []).append(record.verdict)
+        elif isinstance(record, EngineRecord):
+            value = record.metrics.get("backends")
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                backends.setdefault(record.cell, []).append(float(value))
 
-    points: list[Point] = []
+    summaries: list[CellSummary] = []
     for cell_id in order:
-        try:
-            cell = Cell.parse(cell_id)
-        except CellError:
-            # A record whose cell id is not a run-matrix coordinate cannot be
-            # placed on a curve. Skipping it silently would drop a step and
-            # move the knee, so it is refused.
-            raise
-
         group = windows[cell_id]
         completed = sum(w.count for w in group)
         errors = sum(w.errors for w in group)
@@ -187,17 +247,123 @@ def curve_from_records(records: Iterable[AnyRecord]) -> Curve:
         # whole step, from 400/s to 500/s, on the same run the driver called
         # 400/s in memory. A knee that moves with the neighbours is not a knee.
         weighted = sum((w.p99_us or 0.0) * w.count for w in group)
-        p99 = weighted / completed if completed else 0.0
-        verdict = DRIVER_BOUND if DRIVER_BOUND in verdicts.get(cell_id, []) else "OK"
-        points.append(
-            Point(
-                offered_rate_per_s=float(cell.rate),
+        counts = backends.get(cell_id)
+        summaries.append(
+            CellSummary(
+                cell_id=cell_id,
+                cell=Cell.parse(cell_id),
                 achieved_rate_per_s=achieved,
                 completed=completed,
                 errors=errors,
-                p99_us=p99,
-                verdict=verdict,
+                p99_us=weighted / completed if completed else 0.0,
+                verdict=(DRIVER_BOUND if DRIVER_BOUND in verdicts.get(cell_id, []) else "OK"),
+                # Peak, not mean: connections are opened at the start of a cell
+                # and a mean would be dragged down by the ramp-up before they
+                # were all up.
+                backends=max(counts) if counts else None,
             )
         )
-    points.sort(key=lambda p: p.offered_rate_per_s)
-    return Curve(points=tuple(points))
+    return summaries
+
+
+def pool_repeats(points: Iterable[Point]) -> tuple[Point, ...]:
+    """One point per axis value, pooling repeats by median.
+
+    Counts and errors are summed -- they are totals -- while rates and
+    percentiles are medianed, because they are per-unit-time quantities and
+    adding them would report three passes as three times the throughput.
+    A verdict is sticky: one driver-bound repeat makes the point driver-bound,
+    since the offered load was not delivered in at least one of them.
+    """
+    grouped: dict[float, list[Point]] = {}
+    for point in points:
+        grouped.setdefault(point.x, []).append(point)
+    pooled: list[Point] = []
+    for x in sorted(grouped):
+        group = grouped[x]
+        pooled.append(
+            Point(
+                x=x,
+                offered_rate_per_s=statistics.median(p.offered_rate_per_s for p in group),
+                achieved_rate_per_s=statistics.median(p.achieved_rate_per_s for p in group),
+                completed=sum(p.completed for p in group),
+                errors=sum(p.errors for p in group),
+                p99_us=statistics.median(p.p99_us for p in group),
+                verdict=(
+                    DRIVER_BOUND if any(p.verdict == DRIVER_BOUND for p in group) else "OK"
+                ),
+            )
+        )
+    return tuple(pooled)
+
+
+def curve_from_records(records: Iterable[AnyRecord]) -> Curve:
+    """Rebuild a *rate* curve from a metrics stream alone.
+
+    The offered rate comes from the cell id, which is why the id is parsed
+    rather than split: a rate read out of a malformed id would silently
+    reorder the curve.
+    """
+    points = [
+        Point(
+            x=float(summary.cell.rate),
+            offered_rate_per_s=float(summary.cell.rate),
+            achieved_rate_per_s=summary.achieved_rate_per_s,
+            completed=summary.completed,
+            errors=summary.errors,
+            p99_us=summary.p99_us,
+            verdict=summary.verdict,
+        )
+        for summary in summarise_cells(records)
+    ]
+    return Curve(points=pool_repeats(points), axis=RATE_AXIS)
+
+
+def connection_curve_from_records(records: Iterable[AnyRecord]) -> Curve:
+    """Rebuild a *connection* ramp from a metrics stream alone.
+
+    The offered rate is held constant and the connection count is staircased,
+    so the axis is the connection count -- and that count is a *measured*
+    property, read from the engine's own `backends` reading, not a coordinate
+    asserted in the cell id. A ramp that trusted the id would report the
+    connections it asked for rather than the ones the engine actually had, and
+    the cliff is precisely where those two stop being the same number.
+    """
+    summaries = summarise_cells(records)
+    with_counts = [s for s in summaries if s.backends is not None]
+    if not with_counts:
+        raise ValueError(
+            "no engine records carrying a backend count; a connection ramp "
+            "cannot be re-derived without the count the engine actually saw"
+        )
+    points = [
+        Point(
+            # Rounded to the rung the run asked for. The engine's own count
+            # wobbles by a backend or two -- an autovacuum worker, the sampler
+            # itself -- and leaving those as separate axis values would split
+            # a rung's repeats across neighbouring points and defeat pooling.
+            x=float(_nearest_rung(summary.backends or 0.0)),
+            offered_rate_per_s=float(summary.cell.rate),
+            achieved_rate_per_s=summary.achieved_rate_per_s,
+            completed=summary.completed,
+            errors=summary.errors,
+            p99_us=summary.p99_us,
+            verdict=summary.verdict,
+        )
+        for summary in with_counts
+    ]
+    return Curve(points=pool_repeats(points), axis=CONNECTION_AXIS)
+
+
+def _nearest_rung(backends: float) -> int:
+    """Snap a measured backend count to the power of two it belongs to.
+
+    A rung of 64 connections shows up as 65 or 66 backends depending on what
+    else the engine happened to be running. Those are the same rung.
+    """
+    if backends <= 0:
+        return 0
+    rung = 1
+    while rung * 2 <= backends:
+        rung *= 2
+    return rung if backends - rung <= rung else rung * 2

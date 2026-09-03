@@ -26,7 +26,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Record(BaseModel):
@@ -153,6 +153,30 @@ class NetRecord(Record):
     ephemeral_available: int | None = None
 
 
+class ConnectionEventRecord(Record):
+    """One thing that happened to a connection: opened, refused, reset, closed.
+
+    Carries the *evidence* and not the explanation. The SQLSTATE and the
+    server's own message go in; naming the mechanism -- `max_connections`,
+    an idle-in-transaction timeout, ephemeral port exhaustion -- is derivation
+    and belongs in `phenomena/conn_lifecycle.py`, from the file. A sampler that
+    wrote its own conclusion would make the conclusion unreviewable.
+    """
+
+    kind: Literal["connection_event"] = "connection_event"
+    engine: str
+    event: Literal["opened", "refused", "reset", "closed", "timeout"]
+    attempt: int | None = None
+    """Which attempt this was, so a staircase can be reconstructed."""
+    sqlstate: str | None = None
+    """The engine's own code, when it gave one. `53300` is too_many_connections."""
+    message: str | None = None
+    """The error text, verbatim. Truncated by the emitter, never reworded."""
+    errno: int | None = None
+    """The OS error, when the failure never reached the engine at all."""
+    age_s: float | None = None
+
+
 class ValidityRecord(Record):
     """A validity gate firing. Invalidate rather than report with a caveat."""
 
@@ -173,6 +197,7 @@ AnyRecord = Annotated[
     | PoolRecord
     | AppRecord
     | NetRecord
+    | ConnectionEventRecord
     | ValidityRecord,
     Field(discriminator="kind"),
 ]
@@ -188,6 +213,7 @@ RECORD_KINDS: tuple[str, ...] = (
     "pool",
     "app",
     "net",
+    "connection_event",
     "validity",
 )
 

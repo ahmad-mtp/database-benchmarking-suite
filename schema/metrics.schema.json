@@ -241,6 +241,131 @@
       "title": "BackendRecord",
       "type": "object"
     },
+    "ConnectionEventRecord": {
+      "additionalProperties": false,
+      "description": "One thing that happened to a connection: opened, refused, reset, closed.\n\nCarries the *evidence* and not the explanation. The SQLSTATE and the\nserver's own message go in; naming the mechanism -- `max_connections`,\nan idle-in-transaction timeout, ephemeral port exhaustion -- is derivation\nand belongs in `phenomena/conn_lifecycle.py`, from the file. A sampler that\nwrote its own conclusion would make the conclusion unreviewable.",
+      "properties": {
+        "age_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Age S"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attempt"
+        },
+        "cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Run-matrix cell this record belongs to.",
+          "title": "Cell"
+        },
+        "engine": {
+          "title": "Engine",
+          "type": "string"
+        },
+        "errno": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Errno"
+        },
+        "event": {
+          "enum": [
+            "opened",
+            "refused",
+            "reset",
+            "closed",
+            "timeout"
+          ],
+          "title": "Event",
+          "type": "string"
+        },
+        "kind": {
+          "const": "connection_event",
+          "default": "connection_event",
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "seq": {
+          "description": "Per-writer monotonic sequence number.",
+          "minimum": 0,
+          "title": "Seq",
+          "type": "integer"
+        },
+        "sqlstate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sqlstate"
+        },
+        "t_ms": {
+          "description": "Sample time, milliseconds since the Unix epoch.",
+          "title": "T Ms",
+          "type": "integer"
+        },
+        "w": {
+          "description": "Writer shard id. Unique per process or thread.",
+          "title": "W",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t_ms",
+        "w",
+        "seq",
+        "engine",
+        "event"
+      ],
+      "title": "ConnectionEventRecord",
+      "type": "object"
+    },
     "ContainerRecord": {
       "additionalProperties": false,
       "description": "`docker stats` and cgroup readings for one container.",
@@ -1061,6 +1186,7 @@
     "mapping": {
       "app": "#/$defs/AppRecord",
       "backend": "#/$defs/BackendRecord",
+      "connection_event": "#/$defs/ConnectionEventRecord",
       "container": "#/$defs/ContainerRecord",
       "engine": "#/$defs/EngineRecord",
       "latency_window": "#/$defs/LatencyWindowRecord",
@@ -1097,9 +1223,12 @@
       "$ref": "#/$defs/NetRecord"
     },
     {
+      "$ref": "#/$defs/ConnectionEventRecord"
+    },
+    {
       "$ref": "#/$defs/ValidityRecord"
     }
   ],
   "title": "dsel metrics.ndjson record",
-  "x-schema-version": 1
+  "x-schema-version": 2
 }
