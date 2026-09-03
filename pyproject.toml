@@ -11,6 +11,7 @@ dependencies = [
     "pyyaml>=6.0",
     "prometheus-client>=0.26.0",
     "hdrhistogram>=0.10.7",
+    "asyncpg>=0.31.0",
 ]
 
 [project.scripts]
@@ -56,6 +57,13 @@ strict = true
 # relaxing strictness anywhere else.
 [[tool.mypy.overrides]]
 module = ["hdrh.*"]
+ignore_missing_imports = true
+
+# asyncpg ships no py.typed marker either. It is the locked Postgres client for
+# both the driver and the app tier, so PATH A and PATH B differ by the tier and
+# not by the library; the untyped import is narrowed to this one module.
+[[tool.mypy.overrides]]
+module = ["asyncpg.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

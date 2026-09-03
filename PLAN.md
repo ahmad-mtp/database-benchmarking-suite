@@ -297,6 +297,77 @@ pgbench beyond the noise floor, the driver is wrong.
 achieved rate within 1% and on mean latency within the measured noise floor; the ramp
 recovers a knee and collapse point from a synthetic target whose limits are known by
 construction.
+*Done 2026-09-03. Ramp: passed. Rate: passed. Mean latency: **not decidable**, and the
+reason is recorded rather than tuned away.*
+
+**The ramp.** Against a target whose service time is `median / (1 - offered/C)`, both
+limits are arithmetic before the ramp runs: knee `C - (C - baseline)/2` = 350/s, collapse
+`W / (median + W/C)` = 566/s. The ramp reported the first step past each — 400/s and
+600/s — and its whole achieved-throughput curve tracked the closed form (100 → 107,
+200 → 204, 300 → 296, 400 → 398, 500 → 492, then collapse to 380 and 229).
+
+**`time.sleep` is not a way to wait.** The first ramp reported a p50 of 3.7 ms against a
+target whose service time was 0.5 ms, and the knee was invisible underneath it. Measured
+on this host: `sleep(1 ms)` overshoots by 514 µs, `sleep(5 ms)` by 2 514 µs, `sleep(20 ms)`
+by 8 529 µs — roughly *half the requested interval* plus half a millisecond, because the
+kernel coalesces timers. There is no fixed margin to subtract. `driver/clock.py` sleeps a
+fixed *fraction* of the time remaining, which converges on the deadline geometrically and
+cannot overshoot it, then spins the last 1.5 ms. p50 went 3 747 µs → 493 µs against a
+closed-form 480 µs. This also added a third driver gate: when median lag exceeds median
+service time, the reported latency describes the driver rather than the engine.
+
+**Calibration: what was held equal, and what it cost to find out.** Four confounds, each
+found by measurement, each worth more than the comparison itself:
+
+1. *Connection setup was inside the measurement window* — `transport.open()` ran after the
+   phase clock started, putting the connect into the denominator of the achieved rate. 1.6%.
+2. *Protocol.* pgbench defaults to `-M simple`; asyncpg prepares. 1 837 µs against 585 µs,
+   a 3× gap with nothing to do with load generation. `-M prepared` is not tuning, it is
+   what makes the two comparable.
+3. *Rate definition.* Each tool divides by its own elapsed time, and pgbench's excludes
+   connection setup and ends at its last scheduled arrival. Both are recomputed as
+   `transactions / duration`.
+4. *Latency definition.* pgbench prints `latency average = 1.711 ms` and, separately,
+   `rate limit schedule lag: avg 1.500 ms`. **88% of what pgbench reports as latency is
+   pgbench waiting for its own scheduler.** Both tools measure from the scheduled start, so
+   both carry their own lag; each is subtracted before comparing. Measured, pgbench's own
+   lag is 1 137 µs against this driver's 1 µs.
+
+**Rate: passed.** 0.60% between the tools, against the 1% asked. But PLAN.md's flat 1% is
+below the sampling noise of any short run: arrival counts are Poisson, so a run's own
+relative spread is `1/√N`, and at 300/s for 8 s that is 2%. The comparison had to be
+resized to 1 000/s for 12 s — 12 000 arrivals a run, 36 000 pooled — before 1% was a
+criterion rather than a coin toss. Repeats now use a different seed each, since replaying
+one index-derived schedule three times measures the target's variance, not the tool's.
+
+**Mean latency: not decidable on this host.** `pg_stat_statements` — Postgres measuring
+itself, the only arbiter that is not one of the two suspects — reports **22.3 µs of
+execution per statement for pgbench against 3.6 µs for this driver**, for an identical
+query string. Four explanations were excluded by measurement:
+
+- *cache warmth*: without `pg_prewarm` the first tool to run did the physical reads (1 483
+  block reads against 763, and 33 µs against 5 µs of execution as a result). Both sides now
+  show **0.000 block reads per call**, and the gap did not move. A rate-limited warmup
+  cannot do this job — at 1 000/s for six seconds it makes ~6 000 random accesses across a
+  table of 8 000-odd pages.
+- *run order*: blocks alternate which tool goes first. The gap followed the tool.
+- *protocol mode*: `-M simple` and `-M prepared` differ by ~5%, not 6×.
+- *the plan*: plan time is 0 for both, `shared_blks_hit` matches within 1%, rows match.
+
+The untested hypothesis is the parameter and result *format* — libpq text on both against
+asyncpg binary on both, with output conversion falling inside the window `mean_exec_time`
+covers. **That is a hypothesis, not a finding.** Until it is settled, comparing what two
+clients observed says nothing about the clients, because the server is not doing the same
+work for them. What the suite asserts instead is the relation that would catch a broken
+driver: neither tool may report less client-side service time than the server spent
+executing.
+
+**Also built here.** The driver now runs in a container (`images/driver/Dockerfile`,
+two-stage because `hdrhistogram` compiles a C extension and the toolchain has no business
+in a measurement container). That is not incidental: pgbench runs from the engine image by
+D5 and reaches Postgres over a Docker network, so a host-side driver would carry Docker
+Desktop's published-port hop that pgbench does not, and the hop would appear in the
+comparison dressed as a difference between the tools.
 
 **S13 App tier + its ceiling.** *De-risk early.* FastAPI, per-worker asyncpg pool,
 span timing (`t_app_recv`/`t_db_start`/`t_db_end`/`t_app_send`). Measure the `/noop`

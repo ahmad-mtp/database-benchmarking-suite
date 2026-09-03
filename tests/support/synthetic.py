@@ -35,3 +35,24 @@ def saturating_factory(spec: WorkerSpec) -> SyntheticTransport:
         seed=spec.seed,
         offered_rate_per_s=spec.rate_per_s,
     )
+
+
+# The target the S11 ramp is checked against. Its limits are arithmetic:
+#   knee     = C - (C - baseline) / 2      latency doubles against step one
+#   collapse = W / (median + W/C)          offering more returns less
+RAMP_MEDIAN_US = 400.0
+RAMP_SIGMA = 0.35
+RAMP_CAPACITY_PER_S = 600.0
+RAMP_WORKERS = 4
+
+
+def ramp_factory(spec: WorkerSpec) -> SyntheticTransport:
+    """A capacity-limited target for the rate ramp."""
+    return SyntheticTransport(
+        median_us=RAMP_MEDIAN_US,
+        sigma=RAMP_SIGMA,
+        capacity_per_s=RAMP_CAPACITY_PER_S,
+        worker=spec.worker,
+        seed=spec.seed,
+        offered_rate_per_s=spec.rate_per_s,
+    )

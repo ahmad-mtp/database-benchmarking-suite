@@ -12,11 +12,22 @@ container's CPU silently never fires. The gate that matters is therefore
 per-worker and measured from inside the worker -- `getrusage` on itself,
 against wall clock, as a fraction of *one* core.
 
-The second gate is implementation-independent: **schedule lag**. If a worker
-cannot start requests at their scheduled time, the load it offered was not the
-load the spec asked for, whatever the CPU says. Lag is measured, recorded into
-its own histogram, and gated at twice the mean inter-arrival -- systematically
-a whole request behind, not merely jittering.
+Two more gates are implementation-independent, and both are about **schedule
+lag** -- the gap between when an arrival was due and when it was issued.
+
+*Falling behind.* If a worker cannot start requests at their scheduled time,
+the load it offered was not the load the spec asked for, whatever the CPU says.
+Lag p99 above twice the mean inter-arrival means systematically a whole request
+behind, not merely jittering.
+
+*Drowning the signal.* A worker can keep up on average and still contribute
+most of the latency it reports. Corrected latency is measured from the
+scheduled start, so the driver's own lateness is inside every number; when the
+median lag exceeds the median service time -- the uncorrected p50, which is
+what the target actually took -- the figure describes the driver rather than
+the engine. Measured before `driver/clock.py` existed, a target with a 500 us
+service time reported a 3.7 ms p50, all of it the host's sleep overshoot. That
+is the failure this gate names.
 
 Both gates mark the cell rather than annotate it. `INCONCLUSIVE_DRIVER_BOUND`
 is a distinct verdict from `INVALID`: the run is not wrong, it is unanswerable
@@ -39,6 +50,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dsel.driver.clock import wait_until
 from dsel.driver.histogram import (
     CORRECTED,
     UNCORRECTED,
@@ -57,9 +69,12 @@ from dsel.live.schema import LatencyWindowRecord, PhaseRecord, ValidityRecord
 WORKER_CPU_LIMIT = 0.70
 LAG_INTERVALS_LIMIT = 2.0
 LAG_FLOOR_US = 1000.0
+# Above this share the reported latency is mostly the driver's own lateness.
+LAG_SHARE_LIMIT = 0.5
 
 GATE_WORKER_CPU = "driver_worker_cpu"
 GATE_SCHEDULE_LAG = "driver_schedule_lag"
+GATE_LAG_SHARE = "driver_lag_share"
 
 DEFAULT_WINDOW_S = 1.0
 
@@ -99,11 +114,19 @@ class WorkerResult:
     errors: int = 0
     cpu_fraction: float = 0.0
     lag_p99_us: float = 0.0
+    lag_p50_us: float = 0.0
+    service_p50_us: float = 0.0
     mean_interval_us: float = 0.0
     achieved_rate_per_s: float = 0.0
     hlogs: dict[str, Path] = field(default_factory=dict)
     summary: dict[str, dict[str, float]] = field(default_factory=dict)
     verdicts: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def lag_share(self) -> float:
+        """How much of the reported latency the driver contributed itself."""
+        total = self.lag_p50_us + self.service_p50_us
+        return self.lag_p50_us / total if total > 0 else 0.0
 
     @property
     def driver_bound(self) -> bool:
@@ -129,13 +152,17 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
     lag_limit_us = max(LAG_FLOOR_US, LAG_INTERVALS_LIMIT * mean_interval_us)
 
     issued = errors = 0
-    cpu_before = _cpu_seconds()
-    phase_start = time.perf_counter()
-    wall_start = time.time()
     measure_from = spec.warmup_s
     next_window = spec.window_s
 
+    # Connecting is `init`, not `measure`. Opening the transport inside the
+    # window puts connection setup into the denominator of the achieved rate
+    # and into the first latencies -- measured against pgbench, that alone
+    # accounted for a 1.6% rate shortfall the driver did not have.
     transport.open()
+    cpu_before = _cpu_seconds()
+    phase_start = time.perf_counter()
+    wall_start = time.time()
     try:
         if spec.worker == 0:
             writer.write(
@@ -147,7 +174,7 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
             scheduled = phase_start + offset
             now = time.perf_counter()
             if now < scheduled:
-                _wait_until(scheduled)
+                wait_until(scheduled)
             actual = time.perf_counter()
             op = spec.ops[index % len(spec.ops)]
             ok = True
@@ -183,6 +210,8 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
         errors=errors,
         cpu_fraction=cpu_fraction,
         lag_p99_us=max((r.lag_p99_us for r in recorders.values()), default=0.0),
+        lag_p50_us=max((r.lag_p50_us for r in recorders.values()), default=0.0),
+        service_p50_us=max((r.service_p50_us for r in recorders.values()), default=0.0),
         mean_interval_us=mean_interval_us,
         achieved_rate_per_s=issued / elapsed if elapsed > 0 else 0.0,
     )
@@ -213,21 +242,6 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
         )
     writer.close()
     return result
-
-
-def _wait_until(deadline: float) -> None:
-    """Sleep to just short of the deadline, then spin.
-
-    `time.sleep` overshoots by the timer's granularity, which is milliseconds
-    -- enough to turn a scheduled arrival into a late one and to put the
-    driver's own jitter into the latency. Sleeping the bulk and spinning the
-    last 2 ms keeps the arrival honest without burning a core waiting.
-    """
-    remaining = deadline - time.perf_counter()
-    if remaining > 0.002:
-        time.sleep(remaining - 0.002)
-    while time.perf_counter() < deadline:
-        pass
 
 
 def _emit_windows(
@@ -265,9 +279,12 @@ def _emit_gates(
         "INCONCLUSIVE_DRIVER_BOUND" if result.cpu_fraction > WORKER_CPU_LIMIT else "OK"
     )
     lag_verdict = "INCONCLUSIVE_DRIVER_BOUND" if result.lag_p99_us > lag_limit_us else "OK"
+    share = result.lag_share
+    share_verdict = "INCONCLUSIVE_DRIVER_BOUND" if share > LAG_SHARE_LIMIT else "OK"
     result.verdicts = {
         f"{GATE_WORKER_CPU}[{spec.worker}]": cpu_verdict,
         f"{GATE_SCHEDULE_LAG}[{spec.worker}]": lag_verdict,
+        f"{GATE_LAG_SHARE}[{spec.worker}]": share_verdict,
     }
     writer.write(
         ValidityRecord(
@@ -300,6 +317,23 @@ def _emit_gates(
                 f"p99 lag against a {result.mean_interval_us:.0f} us mean "
                 "inter-arrival; a worker that cannot start on time did not offer "
                 "the rate the spec asked for"
+            ),
+        )
+    )
+    writer.write(
+        ValidityRecord(
+            t_ms=now_ms(),
+            w="",
+            seq=0,
+            cell=spec.cell,
+            gate=f"{GATE_LAG_SHARE}[{spec.worker}]",
+            verdict=share_verdict,  # type: ignore[arg-type]
+            observed=round(share, 4),
+            limit=LAG_SHARE_LIMIT,
+            detail=(
+                f"median lag {result.lag_p50_us:.0f} us against a median service "
+                f"time of {result.service_p50_us:.0f} us; past half, the reported "
+                "latency describes the driver rather than the engine"
             ),
         )
     )

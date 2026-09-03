@@ -34,12 +34,21 @@ def _docker(args: list[str], timeout: float = 120.0) -> subprocess.CompletedProc
     )
 
 
+# Every kind of Docker object the harness creates. Networks are here because
+# S11 added them and they leak just as quietly as volumes do -- thirteen were
+# found stranded after one afternoon's calibration runs, each holding a subnet
+# out of the daemon's address pool until it runs out.
+RESOURCE_KINDS = ("container", "volume", "network")
+
+
 def list_managed(run_id: str, kind: str) -> list[str]:
-    """Ids of managed resources of `kind` ("container" or "volume") for a run."""
+    """Ids of managed resources of `kind` for a run."""
     if kind == "container":
         args = ["ps", "-a", "--filter", f"label={LABEL_KEY}={run_id}", "--quiet"]
     elif kind == "volume":
         args = ["volume", "ls", "--filter", f"label={LABEL_KEY}={run_id}", "--quiet"]
+    elif kind == "network":
+        args = ["network", "ls", "--filter", f"label={LABEL_KEY}={run_id}", "--quiet"]
     else:
         raise ValueError(f"unknown resource kind {kind!r}")
     result = _docker(args)
@@ -91,6 +100,8 @@ class Teardown:
         succeeds. Only labelled resources are touched.
         """
         removed = 0
+        # Containers first: a network with an endpoint still attached cannot be
+        # removed, and a volume in use by a running container cannot either.
         for container in list_managed(self.run_id, "container"):
             if _docker(["rm", "--force", "--volumes", container]).returncode == 0:
                 removed += 1
@@ -98,6 +109,9 @@ class Teardown:
             for volume in list_managed(self.run_id, "volume"):
                 if _docker(["volume", "rm", "--force", volume]).returncode == 0:
                     removed += 1
+        for network in list_managed(self.run_id, "network"):
+            if _docker(["network", "rm", network]).returncode == 0:
+                removed += 1
         self._done = True
         return removed
 

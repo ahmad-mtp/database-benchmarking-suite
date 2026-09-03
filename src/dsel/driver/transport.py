@@ -16,10 +16,11 @@ a rerun reproduces the same target, and a failure can be replayed.
 from __future__ import annotations
 
 import math
-import time
 from dataclasses import dataclass
 from hashlib import blake2b
 from typing import Protocol, runtime_checkable
+
+from dsel.driver.clock import spend
 
 
 class TransportError(RuntimeError):
@@ -45,6 +46,68 @@ def _uniform(seed: int, worker: int, index: int, salt: str) -> float:
         f"{seed}|{worker}|{index}|{salt}".encode(), digest_size=8, usedforsecurity=False
     ).digest()
     return (int.from_bytes(digest, "big") >> 11) / float(1 << 53)
+
+
+def deliverable_rate(
+    median_us: float, capacity_per_s: float, workers: int, offered_per_s: float
+) -> float:
+    """What `workers` one-in-flight workers can actually deliver at `offered`.
+
+    Closed form, so a ramp against this target has a knee and a collapse point
+    that are known before the ramp is run rather than read off its own output:
+
+        s(r) = median / (1 - r/C)          service time under utilisation r/C
+        achieved(r) = min(r, workers/s(r))
+
+    `achieved` rises with `r` until the two terms cross and then falls, which
+    is throughput collapse -- the same shape an overloaded system gives, and
+    here it is arithmetic.
+    """
+    service_s = service_seconds(median_us, capacity_per_s, offered_per_s)
+    return min(offered_per_s, workers / service_s)
+
+
+# Where the M/M/1 term is cut off. 1/(1 - rho) is unbounded as rho -> 1, and a
+# model with a pole in it is not a target -- past this the growth continues
+# linearly from the same value, so the curve is continuous and monotonic
+# everywhere instead of jumping at the pole.
+KNEE_CUTOFF = 0.95
+CUTOFF_SLOPE = 100.0
+
+
+def service_multiplier(utilisation: float) -> float:
+    """How much slower the target is at this utilisation. Continuous at the cut."""
+    if utilisation < KNEE_CUTOFF:
+        return 1.0 / (1.0 - utilisation)
+    return 1.0 / (1.0 - KNEE_CUTOFF) + CUTOFF_SLOPE * (utilisation - KNEE_CUTOFF)
+
+
+def service_seconds(median_us: float, capacity_per_s: float, offered_per_s: float) -> float:
+    """The mean service time the synthetic target gives at an offered rate."""
+    return median_us * service_multiplier(offered_per_s / capacity_per_s) / 1_000_000.0
+
+
+def collapse_rate(median_us: float, capacity_per_s: float, workers: int) -> float:
+    """Where `achieved(r)` peaks: `r = workers / s(r)` solved for r.
+
+    Below the cutoff `s(r) = median / (1 - r/C)`, so
+
+        r = workers (1 - r/C) / median   ->   r = workers / (median + workers/C)
+
+    Past that point offering more returns less, which is throughput collapse.
+    """
+    median_s = median_us / 1_000_000.0
+    return workers / (median_s + workers / capacity_per_s)
+
+
+def knee_rate(capacity_per_s: float, baseline_per_s: float, factor: float = 2.0) -> float:
+    """Where latency reaches `factor` times its value at `baseline_per_s`.
+
+    A ramp measures the knee against its own first step, not against an
+    unloaded target it never ran, so the closed form has to say the same:
+    `(1 - b/C) / (1 - r/C) = factor` gives `r = C - (C - b) / factor`.
+    """
+    return capacity_per_s - (capacity_per_s - baseline_per_s) / factor
 
 
 @dataclass(slots=True)
@@ -84,13 +147,9 @@ class SyntheticTransport:
         normal = math.sqrt(-2.0 * math.log(1.0 - u)) * math.cos(2.0 * math.pi * v)
         service = self.median_us * math.exp(self.sigma * normal)
         if self.capacity_per_s and self.offered_rate_per_s > 0:
-            utilisation = self.offered_rate_per_s / self.capacity_per_s
-            if utilisation >= 1.0:
-                # Past capacity the queue grows without bound; the shape here is
-                # only required to be steep and monotonic, not a real M/M/1.
-                service *= 1.0 + 40.0 * (utilisation - 1.0) + 4.0
-            else:
-                service *= 1.0 / (1.0 - utilisation)
+            # The multiplier scales the whole distribution, so every percentile
+            # moves together and the knee is where the closed form says it is.
+            service *= service_multiplier(self.offered_rate_per_s / self.capacity_per_s)
         return service
 
     def theoretical_percentile_us(self, percentile: float) -> float:
@@ -118,18 +177,113 @@ class SyntheticTransport:
             raise TransportError("transport used before open()")
         if self.error_rate and _uniform(self.seed, self.worker, index, "err") < self.error_rate:
             raise TransportError(f"{op}: synthetic failure at index {index}")
-        _busy_wait(self.service_us(index) / 1_000_000.0)
+        # A model target that overshot its own service time by 50% would not
+        # be a known quantity; `clock.spend` is why it does not.
+        spend(self.service_us(index) / 1_000_000.0)
 
 
-def _busy_wait(seconds: float) -> None:
-    """Spend `seconds` without sleeping.
+# --- Postgres -------------------------------------------------------------
+#
+# asyncpg rather than psycopg: psycopg3 is LGPL-3.0 and PLAN.md's toolchain is
+# GPL-free by locked decision, checked by `tests/unit/test_no_copyleft_deps`.
+# asyncpg is Apache-2.0 and is already the locked choice for the app tier, so
+# PATH A and PATH B talk to Postgres through the same library and the delta
+# between them is the tier, not the driver.
 
-    `time.sleep` on macOS rounds to the timer's granularity, which is coarse
-    against the sub-millisecond service times this transport produces -- a
-    900 us sleep is not a 900 us sleep, and the histogram would be measuring
-    the scheduler. Spinning costs a core, which is exactly why the driver has
-    its own cpuset and a per-worker CPU gate.
+# pgbench -S, verbatim. The calibration comparison is only meaningful if the
+# two tools issue the same statement against the same table.
+PGBENCH_SELECT = "SELECT abalance FROM pgbench_accounts WHERE aid = $1"
+PGBENCH_ACCOUNTS_PER_SCALE = 100_000
+
+
+@dataclass(slots=True)
+class PostgresTransport:
+    """One asyncpg connection, driven synchronously.
+
+    A worker holds one request in flight, so an event loop per worker running
+    one coroutine at a time is the whole concurrency model. The loop is created
+    once and reused: `asyncio.run` per operation would build and tear down a
+    loop inside the measurement window and put that in the histogram.
+
+    The account id is drawn index-derived, from the same `blake2b` construction
+    as the arrival schedule and over the same range pgbench uses, so the two
+    tools read the same rows in the same proportions.
     """
-    deadline = time.perf_counter() + seconds
-    while time.perf_counter() < deadline:
-        pass
+
+    dsn: str
+    scale: int = 10
+    seed: int = 20260903
+    worker: int = 0
+    statement: str = PGBENCH_SELECT
+    _loop: object = None
+    _conn: object = None
+
+    @property
+    def rows(self) -> int:
+        return self.scale * PGBENCH_ACCOUNTS_PER_SCALE
+
+    def open(self) -> None:
+        import asyncio
+
+        import asyncpg
+
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        self._conn = loop.run_until_complete(asyncpg.connect(self.dsn))
+
+    def close(self) -> None:
+        import asyncio
+
+        loop = self._loop
+        if loop is None:
+            return
+        assert isinstance(loop, asyncio.AbstractEventLoop)
+        if self._conn is not None:
+            loop.run_until_complete(self._conn.close())  # type: ignore[attr-defined]
+            self._conn = None
+        loop.close()
+        self._loop = None
+
+    def account_id(self, index: int) -> int:
+        """Uniform over the same range as pgbench's `random(1, 100000 * scale)`."""
+        return 1 + int(_uniform(self.seed, self.worker, index, "aid") * self.rows)
+
+    def execute(self, op: str, index: int) -> None:
+        import asyncio
+
+        loop, conn = self._loop, self._conn
+        if loop is None or conn is None:
+            raise TransportError("transport used before open()")
+        assert isinstance(loop, asyncio.AbstractEventLoop)
+        try:
+            loop.run_until_complete(
+                conn.fetchval(self.statement, self.account_id(index))  # type: ignore[attr-defined]
+            )
+        except Exception as exc:  # asyncpg raises a wide family; all count as errors
+            raise TransportError(f"{op}: {exc}") from exc
+
+
+@dataclass(frozen=True, slots=True)
+class PostgresFactory:
+    """A picklable transport factory for the worker pool.
+
+    Workers start under `spawn`, which re-imports the module and pickles the
+    factory. A module-level function would therefore carry only its *default*
+    configuration into the child -- a DSN assigned to a global in `main` never
+    arrives. An instance carries its own state across the boundary.
+    """
+
+    dsn: str
+    scale: int = 10
+    statement: str = PGBENCH_SELECT
+
+    def __call__(self, spec: object) -> PostgresTransport:
+        worker = getattr(spec, "worker", 0)
+        seed = getattr(spec, "seed", 20260903)
+        return PostgresTransport(
+            dsn=self.dsn,
+            scale=self.scale,
+            seed=seed,
+            worker=worker,
+            statement=self.statement,
+        )

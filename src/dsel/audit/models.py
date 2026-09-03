@@ -67,6 +67,17 @@ class ImagePin(Frozen):
     platform_digest: str
     platform: str
 
+    @property
+    def pinned(self) -> str:
+        """`repo@sha256:...` -- what any `docker run` should actually be given.
+
+        The *index* digest, never the platform one: a platform digest is
+        architecture-locked and the same spec has to run on a dev Mac and on
+        amd64 CI. Built here so no caller reconstructs it by hand and gets the
+        tag by accident.
+        """
+        return f"{self.reference.split(':')[0]}@{self.index_digest}"
+
 
 class VcpuSpeed(Frozen):
     """One vCPU's measured speed, with the noise that qualifies it."""

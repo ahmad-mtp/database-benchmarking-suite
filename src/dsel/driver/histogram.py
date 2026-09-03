@@ -94,6 +94,19 @@ class OpRecorder:
             return 0.0
         return float(self.lag.get_value_at_percentile(99.0))
 
+    @property
+    def lag_p50_us(self) -> float:
+        if self.lag.get_total_count() == 0:
+            return 0.0
+        return float(self.lag.get_value_at_percentile(50.0))
+
+    @property
+    def service_p50_us(self) -> float:
+        """The median the target took, uncontaminated by the driver's lateness."""
+        if self.uncorrected.get_total_count() == 0:
+            return 0.0
+        return float(self.uncorrected.get_value_at_percentile(50.0))
+
 
 def percentiles(
     histogram: HdrHistogram, points: tuple[float, ...] = (50.0, 99.0, 99.9)

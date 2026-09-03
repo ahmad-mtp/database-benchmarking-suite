@@ -109,7 +109,12 @@ def test_the_pool_writes_one_shard_per_worker_and_merges_cleanly(tmp_path: Path)
     gates = [r for r in records if isinstance(r, ValidityRecord)]
     assert {r.op for r in windows} == {"read", "write"}
     assert all(r.estimate_only is True for r in windows)
-    assert len(gates) == 6, "two gates per worker, reported whether or not they fired"
+    assert len(gates) == 9, "three gates per worker, reported whether or not they fired"
+    assert {r.gate.split("[")[0] for r in gates} == {
+        "driver_worker_cpu",
+        "driver_schedule_lag",
+        "driver_lag_share",
+    }
     assert {r.verdict for r in gates} <= {"OK", "INCONCLUSIVE_DRIVER_BOUND"}
 
     assert result.completed > 0

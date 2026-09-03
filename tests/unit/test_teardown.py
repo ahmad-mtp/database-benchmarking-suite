@@ -35,3 +35,16 @@ def test_teardown_of_nothing_succeeds() -> None:
     teardown = Teardown("run-that-never-existed")
     assert teardown.run() == 0
     assert teardown.run() == 0
+
+
+def test_every_kind_the_harness_creates_is_swept() -> None:
+    """Networks arrived with S11 and leaked: thirteen were found stranded after
+    one afternoon of calibration runs, each holding a subnet out of the
+    daemon's address pool. A kind the harness creates but teardown does not
+    know about is a leak that nothing reports."""
+    from dsel.runtime.teardown import RESOURCE_KINDS
+
+    assert set(RESOURCE_KINDS) == {"container", "volume", "network"}
+    for kind in RESOURCE_KINDS:
+        # Every kind must have a listing; an unknown one raises instead.
+        list_managed("run-that-does-not-exist", kind)

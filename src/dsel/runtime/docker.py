@@ -101,7 +101,7 @@ def provision(
     ]
     for key, value in (env or {}).items():
         args += ["--env", f"{key}={value}"]
-    args.append(f"{image.reference.split(':')[0]}@{image.index_digest}")
+    args.append(image.pinned)
     args += command or []
 
     started = _docker(args)
