@@ -1,22 +1,16 @@
 """The rate ramp (PLAN.md S11).
 
-A ramp answers three questions about an engine at a fixed envelope: what rate
-it sustains, where latency starts to leave, and where throughput turns over.
-Each is defined here as an arithmetic rule over the ramp's own steps, because a
-knee identified by eye is not a measurement and cannot be re-derived from the
-bundle.
+A ramp runs one offered rate after another and reduces each to a step. **It
+does not decide what the steps mean.** Knee, collapse and max sustainable rate
+are defined once, in `dsel.phenomena.conn_cliff`, and applied here to steps
+held in memory and there to records read from a file. That is what makes S15's
+criterion reachable: *an independent script re-derives knee and collapse from
+`metrics.ndjson` alone*. Two definitions of a knee would drift, and the
+re-derivation would prove nothing.
 
-* **Max sustainable rate** -- the highest offered rate the target actually
-  delivered: achieved within `DELIVERY_TOLERANCE` of offered, errors under
-  `ERROR_TOLERANCE`, and no driver-bound verdict. A step the driver could not
-  deliver says nothing about the target, so it cannot be the answer.
-* **Knee** -- the lowest offered rate whose p99 exceeds `KNEE_FACTOR` times the
-  baseline p99, where the baseline is the *first* step. Latency, not
-  throughput: throughput is still fine at the knee, which is the point.
-* **Collapse** -- the lowest offered rate whose achieved throughput has fallen
-  more than `COLLAPSE_DROP` below the best achieved so far, or whose error rate
-  exceeds `COLLAPSE_ERRORS`. Offering more and getting less is the definition;
-  a plateau is saturation, not collapse.
+Each step's cell id carries its offered rate, because the cell id is the
+run-matrix coordinate and the rate is one of its axes. A ramp whose steps all
+shared a cell id would be unreadable from the metrics file afterwards.
 
 **Cells run serialised.** Two rates in flight at once contend, and the second
 would measure the first. The ramp runs one step at a time, in order, and the
@@ -30,12 +24,31 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dsel.driver.pool import DriverResult, TransportFactory, plan_workers, run_pool
+from dsel.live.cell import Cell
+from dsel.phenomena.conn_cliff import (
+    COLLAPSE_DROP,
+    COLLAPSE_ERRORS,
+    DELIVERY_TOLERANCE,
+    ERROR_TOLERANCE,
+    KNEE_FACTOR,
+    Curve,
+    Point,
+)
 
-DELIVERY_TOLERANCE = 0.03
-ERROR_TOLERANCE = 0.001
-KNEE_FACTOR = 2.0
-COLLAPSE_DROP = 0.05
-COLLAPSE_ERRORS = 0.01
+__all__ = [
+    "COLLAPSE_DROP",
+    "COLLAPSE_ERRORS",
+    "DELIVERY_TOLERANCE",
+    "ERROR_TOLERANCE",
+    "KNEE_FACTOR",
+    "Ramp",
+    "RampPlan",
+    "RampStep",
+    "geometric_rates",
+    "linear_rates",
+    "run_ramp",
+    "summarise",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,16 +69,21 @@ class RampStep:
         return self.errors / self.completed if self.completed else 0.0
 
     @property
+    def point(self) -> Point:
+        """This step as a `phenomena` point, which is where the rules live."""
+        return Point(
+            offered_rate_per_s=self.offered_rate_per_s,
+            achieved_rate_per_s=self.achieved_rate_per_s,
+            completed=self.completed,
+            errors=self.errors,
+            p99_us=self.p99_us,
+            verdict=self.verdict,
+        )
+
+    @property
     def delivered(self) -> bool:
         """Whether the offered rate was actually put on the wire."""
-        if self.offered_rate_per_s <= 0:
-            return False
-        shortfall = 1.0 - self.achieved_rate_per_s / self.offered_rate_per_s
-        return (
-            shortfall <= DELIVERY_TOLERANCE
-            and self.error_rate <= ERROR_TOLERANCE
-            and self.verdict == "OK"
-        )
+        return self.point.delivered
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +92,10 @@ class Ramp:
 
     steps: tuple[RampStep, ...] = ()
     ops: tuple[str, ...] = ()
-    knee_factor: float = KNEE_FACTOR
+
+    @property
+    def curve(self) -> Curve:
+        return Curve(points=tuple(step.point for step in self.steps))
 
     @property
     def baseline_p99_us(self) -> float:
@@ -82,31 +103,17 @@ class Ramp:
 
     @property
     def max_sustainable_rate_per_s(self) -> float | None:
-        delivered = [step for step in self.steps if step.delivered]
-        return max((step.offered_rate_per_s for step in delivered), default=None)
+        return self.curve.max_sustainable_rate_per_s
 
     @property
     def knee_rate_per_s(self) -> float | None:
         """The first rate at which latency has clearly left its baseline."""
-        baseline = self.baseline_p99_us
-        if baseline <= 0:
-            return None
-        for step in self.steps[1:]:
-            if step.p99_us > baseline * self.knee_factor:
-                return step.offered_rate_per_s
-        return None
+        return self.curve.knee_rate_per_s
 
     @property
     def collapse_rate_per_s(self) -> float | None:
         """The first rate at which offering more returned less."""
-        best = 0.0
-        for step in self.steps:
-            if step.error_rate > COLLAPSE_ERRORS:
-                return step.offered_rate_per_s
-            if best > 0 and step.achieved_rate_per_s < best * (1.0 - COLLAPSE_DROP):
-                return step.offered_rate_per_s
-            best = max(best, step.achieved_rate_per_s)
-        return None
+        return self.curve.collapse_rate_per_s
 
     def table(self) -> str:
         """The ramp as it should be read: offered against achieved, then latency."""
@@ -135,16 +142,31 @@ class RampPlan:
     """A ramp fixed before it runs. The rate order is not adaptive."""
 
     run_dir: Path
-    cell_prefix: str
     ops: tuple[str, ...]
     rates_per_s: tuple[float, ...]
+    use_case: str = "uc1"
+    engine: str = "postgres"
+    scenario: str = "oltp-read"
+    repeat: int = 1
     duration_s: float = 5.0
     warmup_s: float = 1.0
     workers: int = 4
     seed: int = 20260903
 
     def cell_for(self, step: int) -> str:
-        return f"{self.cell_prefix}/step{step}"
+        """The run-matrix coordinate for one step, rate included.
+
+        The rate has to be in the id: it is an axis of the matrix, and a file
+        whose cells did not carry it could not be turned back into a curve.
+        """
+        return Cell(
+            use_case=self.use_case,
+            engine=self.engine,
+            scenario=self.scenario,
+            rate=int(self.rates_per_s[step]),
+            repeat=self.repeat,
+            step=step,
+        ).id
 
 
 def summarise(plan: RampPlan, offered: float, result: DriverResult) -> RampStep:

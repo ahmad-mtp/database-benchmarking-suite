@@ -445,6 +445,45 @@ clean measure of anything. The 162 µs is a shape, not a figure to report.
 **S15 Phenomena derivation.** `phenomena/*` reads `metrics.ndjson` and never touches
 Docker or the engine; `live/sampler/*` writes records and never derives a phenomenon.
 *Accept:* an independent script re-derives knee and collapse from `metrics.ndjson` alone.
+*Done 2026-09-03.* **Passed.** `scripts/rederive_landmarks.py`, given a file and nothing
+else — no run directory, no daemon, no engine — recovers knee 400/s, collapse 600/s and
+max sustainable 500/s, identical to the numbers the run reported in memory.
+
+The rules now live in `phenomena/conn_cliff.py` and the driver imports them. It is *one*
+definition applied to two data paths; a second copy in the driver would drift, and the
+re-derivation would then be two definitions agreeing with themselves. A test asserts the
+ramp neither assigns the thresholds nor computes its own landmarks.
+
+Making the file sufficient exposed three bugs in what was being written into it.
+
+**A window claimed a width it did not cover.** `latency_window` carried the *nominal*
+width, so the final partial window of every step claimed a full second. Every rate derived
+from the file came out low in proportion — 25% on a 4 s step with a 1 s window — and that
+includes the `rate_per_s` field itself and therefore the Prometheus series built from it.
+Windows now carry the width they actually covered.
+
+**The warmup was inside the first measured window.** The window boundary fires on the
+first *completion* past the boundary, so the window that closed at 1.15 s spanned the whole
+warmup and held the single operation that had crossed it: `window_ms=1150, count=1`. The
+measurement window now opens when the warmup closes.
+
+**Two definitions of "achieved rate".** In memory it was `issued / elapsed` — every
+arrival including warmup, over the whole phase. From the file it can only be recorded
+arrivals over the measured span. They nearly cancel and did not exactly, so the two paths
+disagreed by 1.6% and `max_sustainable` fell on opposite sides of its threshold. The
+driver now reports the same quantity the file does.
+
+**And one about the statistic itself.** The file's per-cell p99 was first taken as the
+*maximum* of the window estimates. On a busy host that inflated the baseline cell enough to
+raise the doubling threshold and move the knee a whole step — 500/s from the file against
+400/s in memory, on the same run. It is a count-weighted mean now: a knee that moves with
+what the neighbours are doing is not a knee.
+
+Also settled: the closed-form throughput model is held to 20% only *up to* the collapse.
+Past it the model's queue term was chosen to be steep and monotonic, not to be an M/M/1,
+and it predicted 240/s where the run delivered 185/s. The turn-over point is a prediction;
+the depth of the far tail is not one this model is entitled to make, so past collapse only
+the shape is asserted.
 
 **S16–S18 Connection ramp + the three phenomena.**
 - (a) **Cliff** — hold rate, staircase connections; per-connection rate, aggregate

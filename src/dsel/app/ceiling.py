@@ -205,7 +205,7 @@ def measure_ceiling(
     duration_s: float = 4.0,
     warmup_s: float = 1.0,
     workers: int = 4,
-    cell_prefix: str = "uc1/app/noop/r0/rep1",
+    scenario: str = "noop",
 ) -> AppCeiling:
     """Ramp `/noop` and read the tier's CPU at each step.
 
@@ -227,7 +227,8 @@ def measure_ceiling(
 
     plan = RampPlan(
         run_dir=run_dir,
-        cell_prefix=cell_prefix,
+        engine="app",
+        scenario=scenario,
         ops=("noop",),
         rates_per_s=rates_per_s,
         duration_s=duration_s,

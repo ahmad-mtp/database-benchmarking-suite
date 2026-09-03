@@ -154,7 +154,12 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
 
     issued = errors = 0
     measure_from = spec.warmup_s
-    next_window = spec.window_s
+    # The measurement window opens when the warmup closes, not when the phase
+    # starts. Left at the phase start, the first window spans the warmup and
+    # charges its seconds to the handful of arrivals that happened to fall
+    # after it -- measured, a 1150 ms first window holding one operation,
+    # which put the rate re-derived from the file 25% under the truth.
+    next_window = spec.warmup_s + spec.window_s
 
     # Connecting is `init`, not `measure`. Opening the transport inside the
     # window puts connection setup into the denominator of the achieved rate
@@ -163,6 +168,7 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
     transport.open()
     cpu_before = _cpu_seconds()
     phase_start = time.perf_counter()
+    window_started = phase_start + spec.warmup_s
     wall_start = time.time()
     try:
         if spec.worker == 0:
@@ -196,14 +202,28 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
                     inner_us=getattr(transport, "last_inner_us", None),
                 )
             if done - phase_start >= next_window:
-                _emit_windows(writer, spec, recorders, spec.window_s)
+                now_perf = time.perf_counter()
+                _emit_windows(writer, spec, recorders, now_perf - window_started)
+                window_started = now_perf
                 next_window += spec.window_s
     finally:
         transport.close()
 
-    elapsed = time.perf_counter() - phase_start
+    finished = time.perf_counter()
+    elapsed = finished - phase_start
+    # The achieved rate is over the *measured* span, not the whole phase.
+    # Counting warmup arrivals against a denominator that includes the warmup
+    # nearly cancels, but not exactly, and the two definitions then disagree
+    # between the run's own answer and the one re-derived from the file (S15).
+    # One definition, two data paths.
+    measured_span = max(1e-9, finished - (phase_start + spec.warmup_s))
     cpu_fraction = (_cpu_seconds() - cpu_before) / elapsed if elapsed > 0 else 0.0
-    _emit_windows(writer, spec, recorders, spec.window_s)
+    # The final window is a partial one. Emitting it at the nominal width would
+    # claim a second of coverage for what may be a tenth of one, and any rate
+    # derived from the file afterwards -- the re-derived curve, the Prometheus
+    # series -- would come out low in proportion. Measured, a 4 s ramp step
+    # with a 1 s window read 25% under its true rate.
+    _emit_windows(writer, spec, recorders, finished - window_started)
 
     result = WorkerResult(
         worker=spec.worker,
@@ -215,7 +235,7 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
         lag_p50_us=max((r.lag_p50_us for r in recorders.values()), default=0.0),
         service_p50_us=max((r.service_p50_us for r in recorders.values()), default=0.0),
         mean_interval_us=mean_interval_us,
-        achieved_rate_per_s=issued / elapsed if elapsed > 0 else 0.0,
+        achieved_rate_per_s=sum(r.count for r in recorders.values()) / measured_span,
     )
 
     histograms = spec.run_dir / "histograms"
@@ -252,7 +272,15 @@ def run_worker(spec: WorkerSpec, transport: Transport) -> WorkerResult:
 def _emit_windows(
     writer: ShardWriter, spec: WorkerSpec, recorders: dict[str, OpRecorder], window_s: float
 ) -> None:
-    """Publish within-window estimates. For watching, never for reporting."""
+    """Publish within-window estimates. For watching, never for reporting.
+
+    `window_s` is the width the window actually covered, not the width it was
+    aimed at. The boundary advances whether or not anything was recorded, so a
+    warmup window that emitted nothing does not leave its seconds inside the
+    next window's width.
+    """
+    if window_s <= 0:
+        return
     for op, recorder in recorders.items():
         histogram, count, errors = recorder.take_window()
         if count == 0:

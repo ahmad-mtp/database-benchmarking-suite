@@ -80,3 +80,71 @@ def test_phenomena_never_touch_docker() -> None:
             "alone (PLAN.md S15)"
         )
         assert not any(c.startswith("subprocess") for c in called_names(path))
+
+
+def test_there_are_phenomena_to_check() -> None:
+    assert python_files(PHENOMENA), "no phenomena found; the rule would vacuously pass"
+
+
+@pytest.mark.parametrize("path", python_files(PHENOMENA), ids=lambda p: p.name)
+def test_phenomena_read_only_the_metrics_stream(path: Path) -> None:
+    """A derivation may depend on the record schema and nothing else.
+
+    Not a style rule. S15's criterion is that an independent script re-derives
+    the landmarks from `metrics.ndjson` alone; a derivation that reached into
+    `runtime` for a container, or into `driver` to run a load, could not be
+    replayed against an audit bundle a year later, and a number nobody can
+    re-derive is not evidence.
+    """
+    internal = {m for m in imported_modules(path) if m.startswith("dsel.")}
+    allowed = {"dsel.live.schema", "dsel.live.cell", "dsel.live.merge", "dsel.live.ndjson"}
+    offenders = internal - allowed
+    assert not offenders, (
+        f"{path.name} imports {sorted(offenders)}; phenomena may depend on the "
+        f"record schema and nothing else (allowed: {sorted(allowed)})"
+    )
+
+
+def test_the_ramp_takes_its_rules_from_phenomena_rather_than_restating_them() -> None:
+    """One definition of a knee, applied to two data paths.
+
+    A second copy in the driver would drift from this one, and S15's
+    re-derivation would then be two definitions agreeing with themselves.
+    """
+    ramp = SRC / "driver" / "ramp.py"
+    assert "dsel.phenomena.conn_cliff" in imported_modules(ramp)
+
+    tree = ast.parse(ramp.read_text(), filename=str(ramp))
+    # The thresholds are imported, never assigned here: a second value for
+    # KNEE_FACTOR is a second definition of a knee.
+    assigned = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    thresholds = {
+        "KNEE_FACTOR",
+        "COLLAPSE_DROP",
+        "COLLAPSE_ERRORS",
+        "DELIVERY_TOLERANCE",
+        "ERROR_TOLERANCE",
+    }
+    assert not (assigned & thresholds), (
+        f"driver/ramp.py assigns {sorted(assigned & thresholds)}; the thresholds "
+        "belong to phenomena and must be imported from it"
+    )
+
+    # And each landmark delegates rather than deciding.
+    landmarks = {"max_sustainable_rate_per_s", "knee_rate_per_s", "collapse_rate_per_s"}
+    found = {
+        node.name: ast.unparse(node)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name in landmarks
+    }
+    assert set(found) == landmarks, f"missing landmarks in ramp.py: {landmarks - set(found)}"
+    for name, body in found.items():
+        assert "self.curve" in body, (
+            f"ramp.{name} computes its own answer instead of delegating to phenomena"
+        )
